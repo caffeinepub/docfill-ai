@@ -1,3 +1,14 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,21 +21,26 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
+import { Switch } from "@/components/ui/switch";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import {
   useGetCallerUserProfile,
   useSaveCallerUserProfile,
 } from "@/hooks/useQueries";
 import {
+  AlertTriangle,
+  Briefcase,
   Calendar,
   CheckCircle2,
   CreditCard,
   Loader2,
+  Lock,
   Mail,
   MapPin,
   Phone,
   Save,
   Shield,
+  Trash2,
   User,
 } from "lucide-react";
 import { motion } from "motion/react";
@@ -33,18 +49,39 @@ import { toast } from "sonner";
 
 interface ExtraProfile {
   phone: string;
-  address: string;
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
   dob: string;
   idNumber: string;
+  employer: string;
+  jobTitle: string;
 }
 
 const EXTRA_KEY = "docfill_profile_extra";
+const PRIVACY_KEY = "docfill_privacy_mode";
+
+const EMPTY_EXTRA: ExtraProfile = {
+  phone: "",
+  street: "",
+  city: "",
+  state: "",
+  zip: "",
+  dob: "",
+  idNumber: "",
+  employer: "",
+  jobTitle: "",
+};
 
 function loadExtra(): ExtraProfile {
   try {
-    return JSON.parse(localStorage.getItem(EXTRA_KEY) || "{}") as ExtraProfile;
+    const parsed = JSON.parse(
+      localStorage.getItem(EXTRA_KEY) || "{}",
+    ) as Partial<ExtraProfile>;
+    return { ...EMPTY_EXTRA, ...parsed };
   } catch {
-    return { phone: "", address: "", dob: "", idNumber: "" };
+    return { ...EMPTY_EXTRA };
   }
 }
 
@@ -53,41 +90,138 @@ export function ProfilePage() {
   const { mutateAsync: saveProfile, isPending } = useSaveCallerUserProfile();
   const { identity } = useInternetIdentity();
 
+  // Privacy mode — persisted as a boolean in localStorage (mode setting itself,
+  // not the profile data)
+  const [privacyMode, setPrivacyMode] = useState<boolean>(
+    () => localStorage.getItem(PRIVACY_KEY) === "true",
+  );
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
+  const [street, setStreet] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [zip, setZip] = useState("");
   const [dob, setDob] = useState("");
   const [idNumber, setIdNumber] = useState("");
+  const [employer, setEmployer] = useState("");
+  const [jobTitle, setJobTitle] = useState("");
   const [saved, setSaved] = useState(false);
+  const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
+  // Load profile name/email from backend
   useEffect(() => {
     if (profile) {
       setName(profile.name || "");
       setEmail(profile.email || "");
     }
-    const extra = loadExtra();
-    setPhone(extra.phone || "");
-    setAddress(extra.address || "");
-    setDob(extra.dob || "");
-    setIdNumber(extra.idNumber || "");
   }, [profile]);
 
-  const fields = [name, email, phone, address, dob, idNumber];
+  // Load extra fields from localStorage on first mount (only when privacy mode is OFF)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentionally runs only on mount
+  useEffect(() => {
+    if (!privacyMode) {
+      const extra = loadExtra();
+      setPhone(extra.phone);
+      setStreet(extra.street);
+      setCity(extra.city);
+      setState(extra.state);
+      setZip(extra.zip);
+      setDob(extra.dob);
+      setIdNumber(extra.idNumber);
+      setEmployer(extra.employer);
+      setJobTitle(extra.jobTitle);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePrivacyToggle = (checked: boolean) => {
+    setPrivacyMode(checked);
+    localStorage.setItem(PRIVACY_KEY, String(checked));
+    if (checked) {
+      // Clear in-memory extra data — user chose privacy mode
+      setPhone("");
+      setStreet("");
+      setCity("");
+      setState("");
+      setZip("");
+      setDob("");
+      setIdNumber("");
+      setEmployer("");
+      setJobTitle("");
+      toast.info("Privacy Mode enabled — data won't be saved to localStorage");
+    } else {
+      toast.info("Privacy Mode disabled — data will persist after refresh");
+    }
+  };
+
+  // 11 total fields
+  const fields = [
+    name,
+    email,
+    phone,
+    street,
+    city,
+    state,
+    zip,
+    dob,
+    idNumber,
+    employer,
+    jobTitle,
+  ];
   const filledCount = fields.filter((v) => v.trim().length > 0).length;
-  const completionPct = Math.round((filledCount / fields.length) * 100);
+  const completionPct = Math.round((filledCount / 11) * 100);
 
   const handleSave = async () => {
     try {
       const principal = identity?.getPrincipal().toString() || "";
       await saveProfile({ id: principal, name, email });
-      const extra: ExtraProfile = { phone, address, dob, idNumber };
-      localStorage.setItem(EXTRA_KEY, JSON.stringify(extra));
+
+      // Only persist extra fields to localStorage when privacy mode is OFF
+      if (!privacyMode) {
+        const extra: ExtraProfile = {
+          phone,
+          street,
+          city,
+          state,
+          zip,
+          dob,
+          idNumber,
+          employer,
+          jobTitle,
+        };
+        localStorage.setItem(EXTRA_KEY, JSON.stringify(extra));
+      }
+
       setSaved(true);
       toast.success("Profile saved successfully");
       setTimeout(() => setSaved(false), 3000);
     } catch {
       toast.error("Failed to save profile. Please try again.");
+    }
+  };
+
+  const handleClearAll = async () => {
+    try {
+      const principal = identity?.getPrincipal().toString() || "";
+      await saveProfile({ id: principal, name: "", email: "" });
+      localStorage.setItem(EXTRA_KEY, JSON.stringify({}));
+      setName("");
+      setEmail("");
+      setPhone("");
+      setStreet("");
+      setCity("");
+      setState("");
+      setZip("");
+      setDob("");
+      setIdNumber("");
+      setEmployer("");
+      setJobTitle("");
+      setClearDialogOpen(false);
+      toast.success("Profile cleared");
+    } catch {
+      toast.error("Failed to clear profile. Please try again.");
     }
   };
 
@@ -107,12 +241,79 @@ export function ProfilePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-1">
-          Master Profile
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Your personal data used to auto-fill document fields
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-1">
+              Master Profile
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Your personal data used to auto-fill document fields
+            </p>
+          </div>
+          <Badge
+            variant="secondary"
+            className="text-xs px-2 py-1 bg-primary/10 text-primary border-primary/20"
+          >
+            v4.0
+          </Badge>
+        </div>
+      </motion.div>
+
+      {/* Privacy Mode Toggle */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05, duration: 0.35 }}
+      >
+        <Card className="bento-card">
+          <CardContent className="py-5 px-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Lock size={16} className="text-primary" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-foreground">
+                    Privacy Mode
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {privacyMode
+                      ? "Data kept in memory only"
+                      : "Data persisted to localStorage"}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                data-ocid="profile.privacy_mode.switch"
+                checked={privacyMode}
+                onCheckedChange={handlePrivacyToggle}
+                aria-label="Toggle Privacy Mode"
+              />
+            </div>
+
+            {/* Warning banner when privacy mode is ON */}
+            {privacyMode && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                className="flex items-start gap-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 px-3.5 py-3"
+              >
+                <AlertTriangle
+                  size={15}
+                  className="text-amber-500 flex-shrink-0 mt-0.5"
+                />
+                <p className="text-xs text-amber-600 dark:text-amber-400 leading-relaxed">
+                  <strong>
+                    Data will be cleared if you refresh or close the tab.
+                  </strong>{" "}
+                  Only your name and email are saved to the secure backend.
+                </p>
+              </motion.div>
+            )}
+          </CardContent>
+        </Card>
       </motion.div>
 
       {/* Completeness */}
@@ -142,8 +343,11 @@ export function ProfilePage() {
               </Badge>
             </div>
             <Progress value={completionPct} className="h-2.5" />
+            <p className="text-xs text-muted-foreground mt-2">
+              {filledCount} of 11 fields filled
+            </p>
             {completionPct === 100 && (
-              <div className="flex items-center gap-2 mt-3 text-success text-xs font-medium">
+              <div className="flex items-center gap-2 mt-2 text-success text-xs font-medium">
                 <CheckCircle2 size={14} />
                 All fields filled — maximum auto-fill accuracy
               </div>
@@ -152,7 +356,7 @@ export function ProfilePage() {
         </Card>
       </motion.div>
 
-      {/* Form */}
+      {/* Personal Information */}
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
@@ -165,12 +369,11 @@ export function ProfilePage() {
               Personal Information
             </CardTitle>
             <CardDescription>
-              This information will be used to auto-fill form fields in uploaded
-              documents
+              Basic identity information for auto-filling document fields
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Row 1 */}
+            {/* Row 1: Name + Email */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label
@@ -209,7 +412,7 @@ export function ProfilePage() {
               </div>
             </div>
 
-            {/* Row 2 */}
+            {/* Row 2: Phone + DOB */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label
@@ -248,26 +451,7 @@ export function ProfilePage() {
               </div>
             </div>
 
-            {/* Row 3 */}
-            <div className="space-y-2">
-              <Label
-                htmlFor="address"
-                className="text-sm font-medium flex items-center gap-1.5"
-              >
-                <MapPin size={13} className="text-muted-foreground" />
-                Mailing Address
-              </Label>
-              <Input
-                id="address"
-                data-ocid="profile.address.input"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                placeholder="123 Main Street, New York, NY 10001"
-                className="h-10"
-              />
-            </div>
-
-            {/* Row 4 */}
+            {/* Row 3: ID Number */}
             <div className="space-y-2">
               <Label
                 htmlFor="idNumber"
@@ -285,27 +469,223 @@ export function ProfilePage() {
                 className="h-10"
               />
             </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
-            {/* Save button */}
-            <div className="pt-2 border-t border-border">
-              <Button
-                data-ocid="profile.save.button"
-                onClick={handleSave}
-                disabled={isPending}
-                className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary-glow"
+      {/* Mailing Address */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.35 }}
+      >
+        <Card className="bento-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MapPin size={18} className="text-primary" />
+              Mailing Address
+            </CardTitle>
+            <CardDescription>
+              Your postal address for correspondence and document fields
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Street */}
+            <div className="space-y-2">
+              <Label
+                htmlFor="street"
+                className="text-sm font-medium flex items-center gap-1.5"
               >
-                {isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : saved ? (
-                  <CheckCircle2 className="h-4 w-4" />
-                ) : (
-                  <Save className="h-4 w-4" />
-                )}
-                {isPending ? "Saving..." : saved ? "Saved!" : "Save Profile"}
-              </Button>
-              <p className="text-xs text-muted-foreground mt-2">
-                Profile data is stored securely on the Internet Computer
-              </p>
+                <MapPin size={13} className="text-muted-foreground" />
+                Street Address
+              </Label>
+              <Input
+                id="street"
+                data-ocid="profile.street.input"
+                value={street}
+                onChange={(e) => setStreet(e.target.value)}
+                placeholder="123 Main Street"
+                className="h-10"
+              />
+            </div>
+            {/* City + State + Zip — 2×2 grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="city" className="text-sm font-medium">
+                  City
+                </Label>
+                <Input
+                  id="city"
+                  data-ocid="profile.city.input"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="New York"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="state" className="text-sm font-medium">
+                  State
+                </Label>
+                <Input
+                  id="state"
+                  data-ocid="profile.state.input"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  placeholder="NY"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="zip" className="text-sm font-medium">
+                  Zip Code
+                </Label>
+                <Input
+                  id="zip"
+                  data-ocid="profile.zip.input"
+                  value={zip}
+                  onChange={(e) => setZip(e.target.value)}
+                  placeholder="10001"
+                  className="h-10"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Employment Information */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.25, duration: 0.35 }}
+      >
+        <Card className="bento-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Briefcase size={18} className="text-primary" />
+              Employment Information
+            </CardTitle>
+            <CardDescription>
+              Your current employer details for employment-related documents
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="employer"
+                  className="text-sm font-medium flex items-center gap-1.5"
+                >
+                  <Briefcase size={13} className="text-muted-foreground" />
+                  Employer / Company Name
+                </Label>
+                <Input
+                  id="employer"
+                  data-ocid="profile.employer.input"
+                  value={employer}
+                  onChange={(e) => setEmployer(e.target.value)}
+                  placeholder="Acme Corporation"
+                  className="h-10"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label
+                  htmlFor="jobTitle"
+                  className="text-sm font-medium flex items-center gap-1.5"
+                >
+                  <Briefcase size={13} className="text-muted-foreground" />
+                  Job Title
+                </Label>
+                <Input
+                  id="jobTitle"
+                  data-ocid="profile.jobtitle.input"
+                  value={jobTitle}
+                  onChange={(e) => setJobTitle(e.target.value)}
+                  placeholder="Software Engineer"
+                  className="h-10"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Save + Clear Actions */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3, duration: 0.35 }}
+      >
+        <Card className="bento-card">
+          <CardContent className="py-5 px-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <Button
+                  data-ocid="profile.save.button"
+                  onClick={handleSave}
+                  disabled={isPending}
+                  className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary-glow"
+                >
+                  {isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : saved ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <Save className="h-4 w-4" />
+                  )}
+                  {isPending ? "Saving..." : saved ? "Saved!" : "Save Profile"}
+                </Button>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {privacyMode
+                    ? "Name & email saved to backend only — extra fields kept in memory"
+                    : "Profile data is stored securely on the Internet Computer"}
+                </p>
+              </div>
+
+              <div className="border-t border-border sm:border-t-0 sm:border-l sm:pl-4 pt-4 sm:pt-0 w-full sm:w-auto">
+                <AlertDialog
+                  open={clearDialogOpen}
+                  onOpenChange={setClearDialogOpen}
+                >
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      data-ocid="profile.clear_all.open_modal_button"
+                      variant="outline"
+                      className="gap-2 text-destructive border-destructive/30 hover:bg-destructive/5 hover:border-destructive/50 w-full sm:w-auto"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Clear All Data
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent data-ocid="profile.clear_all.dialog">
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>
+                        Clear All Profile Data
+                      </AlertDialogTitle>
+                      <AlertDialogDescription>
+                        This will permanently erase all your profile
+                        information. This action cannot be undone.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel data-ocid="profile.clear_all.cancel_button">
+                        Cancel
+                      </AlertDialogCancel>
+                      <AlertDialogAction
+                        data-ocid="profile.clear_all.confirm_button"
+                        onClick={handleClearAll}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        Yes, Clear All
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+                <p className="text-xs text-muted-foreground mt-2 text-right sm:text-left">
+                  Resets all fields to empty
+                </p>
+              </div>
             </div>
           </CardContent>
         </Card>

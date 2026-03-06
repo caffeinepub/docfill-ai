@@ -34,9 +34,14 @@ function getProfileCompletion(
     profile?.name,
     profile?.email,
     extra.phone,
-    extra.address,
+    extra.street,
+    extra.city,
+    extra.state,
+    extra.zip,
     extra.dob,
     extra.idNumber,
+    extra.employer,
+    extra.jobTitle,
   ];
   const filled = fields.filter((v) => v && v.trim().length > 0).length;
   return Math.round((filled / fields.length) * 100);
@@ -143,33 +148,47 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                     {[
                       {
                         label: "Name",
-                        value: profile?.name,
                         done: !!profile?.name,
                       },
                       {
                         label: "Email",
-                        value: profile?.email,
                         done: !!profile?.email,
                       },
                       {
                         label: "Phone",
-                        value: extraProfile.phone,
                         done: !!extraProfile.phone,
                       },
                       {
-                        label: "Address",
-                        value: extraProfile.address,
-                        done: !!extraProfile.address,
+                        label: "Street",
+                        done: !!extraProfile.street,
+                      },
+                      {
+                        label: "City",
+                        done: !!extraProfile.city,
+                      },
+                      {
+                        label: "State",
+                        done: !!extraProfile.state,
+                      },
+                      {
+                        label: "Zip",
+                        done: !!extraProfile.zip,
                       },
                       {
                         label: "Date of Birth",
-                        value: extraProfile.dob,
                         done: !!extraProfile.dob,
                       },
                       {
                         label: "ID Number",
-                        value: extraProfile.idNumber,
                         done: !!extraProfile.idNumber,
+                      },
+                      {
+                        label: "Employer",
+                        done: !!extraProfile.employer,
+                      },
+                      {
+                        label: "Job Title",
+                        done: !!extraProfile.jobTitle,
                       },
                     ].map((field) => (
                       <div
