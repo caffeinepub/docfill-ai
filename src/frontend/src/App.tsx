@@ -5,12 +5,13 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { ProfilePage } from "@/pages/ProfilePage";
+import { TemplatesPage } from "@/pages/TemplatesPage";
 import { UploadPage } from "@/pages/UploadPage";
 import { Loader2, Zap } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 
-type Page = "dashboard" | "profile" | "upload" | "documents";
+type Page = "dashboard" | "profile" | "upload" | "documents" | "templates";
 
 function LoadingScreen() {
   return (
@@ -35,6 +36,16 @@ function LoadingScreen() {
 export default function App() {
   const { identity, isInitializing } = useInternetIdentity();
   const [currentPage, setCurrentPage] = useState<Page>("dashboard");
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
+
+  const handleNavigate = (page: Page, templateId?: string) => {
+    setCurrentPage(page);
+    if (page === "upload" && templateId) {
+      setActiveTemplateId(templateId);
+    } else if (page !== "upload") {
+      setActiveTemplateId(null);
+    }
+  };
 
   if (isInitializing) {
     return <LoadingScreen />;
@@ -52,21 +63,23 @@ export default function App() {
   const renderPage = () => {
     switch (currentPage) {
       case "dashboard":
-        return <DashboardPage onNavigate={setCurrentPage} />;
+        return <DashboardPage onNavigate={handleNavigate} />;
       case "profile":
         return <ProfilePage />;
       case "upload":
-        return <UploadPage />;
+        return <UploadPage templateId={activeTemplateId} />;
       case "documents":
-        return <DocumentsPage onNavigate={setCurrentPage} />;
+        return <DocumentsPage onNavigate={handleNavigate} />;
+      case "templates":
+        return <TemplatesPage onNavigate={handleNavigate} />;
       default:
-        return <DashboardPage onNavigate={setCurrentPage} />;
+        return <DashboardPage onNavigate={handleNavigate} />;
     }
   };
 
   return (
     <>
-      <AppLayout currentPage={currentPage} onNavigate={setCurrentPage}>
+      <AppLayout currentPage={currentPage} onNavigate={handleNavigate}>
         {renderPage()}
         {/* Footer */}
         <footer className="mt-16 pb-6 text-center">

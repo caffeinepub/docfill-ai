@@ -14,6 +14,15 @@
 
 const ALIAS_MAP: Record<string, string[]> = {
   name: [
+    "current legal name",
+    "family name",
+    "given name",
+    "last name (family name)",
+    "first name (given name)",
+    "middle name",
+    "nom de famille",
+    "prénom",
+    "prenom",
     "full name",
     "fullname",
     "legal name",
@@ -163,6 +172,12 @@ const ALIAS_MAP: Record<string, string[]> = {
   ],
 
   street: [
+    "physical address",
+    "home address (number and street)",
+    "mailing address (if different)",
+    "in care of",
+    "adresse",
+    "parish of residence",
     "street",
     "street address",
     "mailing address",
@@ -248,6 +263,9 @@ const ALIAS_MAP: Record<string, string[]> = {
   ],
 
   dob: [
+    "date of birth (mm/dd/yyyy)",
+    "date de naissance",
+    "lieu de naissance",
     "dob",
     "d.o.b.",
     "d.o.b",
@@ -272,6 +290,13 @@ const ALIAS_MAP: Record<string, string[]> = {
   ],
 
   idNumber: [
+    "alien registration number",
+    "a-number",
+    "a number",
+    "uscis #",
+    "uscis#",
+    "alien number",
+    "a#",
     "id number",
     "id no",
     "id no.",
@@ -318,6 +343,9 @@ const ALIAS_MAP: Record<string, string[]> = {
   ],
 
   employer: [
+    "current employer name",
+    "name of employer",
+    "employer's name",
     "employer",
     "employer name",
     "company",
@@ -342,6 +370,9 @@ const ALIAS_MAP: Record<string, string[]> = {
   ],
 
   jobTitle: [
+    "current occupation",
+    "occupation (current)",
+    "trade or occupation",
     "job title",
     "job title (print)",
     "position",
@@ -369,6 +400,55 @@ const ALIAS_MAP: Record<string, string[]> = {
     "your occupation",
     "occupation (if applicable)",
   ],
+
+  referee1Name: [
+    "referee 1 name",
+    "referee name",
+    "sponsor name",
+    "name of referee",
+    "name of sponsor",
+    "first referee",
+    "referee (1)",
+    "parrain/marraine",
+    "parrain",
+    "marraine",
+    "guarantor name",
+    "witness name",
+  ],
+  referee1Phone: [
+    "referee 1 phone",
+    "referee phone",
+    "sponsor phone",
+    "sponsor telephone",
+    "referee telephone",
+    "first referee phone",
+  ],
+  referee1Address: [
+    "referee 1 address",
+    "referee address",
+    "sponsor address",
+    "address of referee",
+    "address of sponsor",
+    "first referee address",
+  ],
+  referee2Name: [
+    "referee 2 name",
+    "second referee",
+    "referee (2)",
+    "co-sponsor name",
+    "second sponsor",
+    "alternate referee",
+  ],
+  referee2Phone: [
+    "referee 2 phone",
+    "second referee phone",
+    "alternate referee phone",
+  ],
+  referee2Address: [
+    "referee 2 address",
+    "second referee address",
+    "alternate referee address",
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -387,6 +467,12 @@ export const MASTER_PROFILE_LABELS: Record<string, string> = {
   idNumber: "ID / Passport Number",
   employer: "Employer",
   jobTitle: "Job Title",
+  referee1Name: "Referee 1 Name",
+  referee1Phone: "Referee 1 Phone",
+  referee1Address: "Referee 1 Address",
+  referee2Name: "Referee 2 Name",
+  referee2Phone: "Referee 2 Phone",
+  referee2Address: "Referee 2 Address",
 };
 
 // ---------------------------------------------------------------------------
@@ -417,6 +503,8 @@ const KEYWORD_MAP: { keywords: string[]; key: string }[] = [
     key: "employer",
   },
   { keywords: ["title", "occupation", "position", "role"], key: "jobTitle" },
+  { keywords: ["referee", "sponsor", "parrain"], key: "referee1Name" },
+  { keywords: ["referee2", "second referee"], key: "referee2Name" },
 ];
 
 // ---------------------------------------------------------------------------

@@ -13,8 +13,14 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import {
+  type CoordinateSlot,
+  detectCoordinateSlots,
+} from "@/utils/coordinateDetector";
+import {
+  type CoordinateFillEntry,
   type PdfFillEntry,
   fillAndDownloadPdf,
+  fillAndDownloadPdfByCoordinates,
   getPdfFieldNames,
 } from "@/utils/pdfFill";
 import {
@@ -25,18 +31,22 @@ import {
 import {
   AlertCircle,
   Brain,
+  Camera,
   CheckCircle2,
   CloudUpload,
   Download,
   FileCheck,
   FileText,
+  Globe,
   Loader2,
+  MapPin,
   RotateCcw,
   Sparkles,
   Upload,
   XCircle,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { PDFDocument } from "pdf-lib";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -55,6 +65,55 @@ interface DetectedField {
   matchType: "semantic" | "keyword" | "none";
 }
 
+// ---------------------------------------------------------------------------
+// Language translations for Haitian forms
+// ---------------------------------------------------------------------------
+
+const FIELD_LABEL_TRANSLATIONS: Record<string, Record<string, string>> = {
+  fr: {
+    "Full Name": "Nom complet",
+    "Email Address": "Adresse e-mail",
+    "Phone Number": "Numéro de téléphone",
+    "Street Address": "Adresse postale",
+    City: "Ville",
+    State: "État",
+    "Zip Code": "Code postal",
+    "Date of Birth": "Date de naissance",
+    "ID / Passport Number": "Numéro d'identification",
+    Employer: "Employeur",
+    "Job Title": "Titre du poste",
+    "Referee 1 Name": "Nom du parrain 1",
+    "Referee 2 Name": "Nom du parrain 2",
+  },
+  ht: {
+    "Full Name": "Non konplè",
+    "Email Address": "Adrès imèl",
+    "Phone Number": "Nimewo telefòn",
+    "Street Address": "Adrès",
+    City: "Vil",
+    State: "Eta",
+    "Zip Code": "Kòd postal",
+    "Date of Birth": "Dat nesans",
+    "ID / Passport Number": "Nimewo idantifikasyon",
+    Employer: "Anplwayè",
+    "Job Title": "Tit travay",
+    "Referee 1 Name": "Non patwon 1",
+    "Referee 2 Name": "Non patwon 2",
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Photo requirements guide
+// ---------------------------------------------------------------------------
+
+const PHOTO_SPECS: Record<string, string> = {
+  n400: '📷 US Photo Spec: 2"×2" color photo, white background, taken within 30 days, no glasses.',
+  "n1-jamaica":
+    '📷 Jamaica Photo Spec: 1"×1" matte finish, white background, neutral expression, taken within 6 months. Two copies required.',
+  ds2029:
+    '📷 DS-2029 Photo Spec: 2"×2" color photo, white background, neutral expression, within 6 months.',
+};
+
 interface ExtraProfile {
   phone: string;
   street: string;
@@ -67,6 +126,15 @@ interface ExtraProfile {
   jobTitle: string;
 }
 
+interface RefereeData {
+  referee1Name?: string;
+  referee1Phone?: string;
+  referee1Address?: string;
+  referee2Name?: string;
+  referee2Phone?: string;
+  referee2Address?: string;
+}
+
 function getProfileData() {
   const extra = JSON.parse(
     localStorage.getItem("docfill_profile_extra") || "{}",
@@ -74,7 +142,10 @@ function getProfileData() {
   const profile = JSON.parse(
     localStorage.getItem("docfill_user_profile") || "{}",
   ) as { name?: string; email?: string };
-  return { ...profile, ...extra };
+  const refs = JSON.parse(
+    localStorage.getItem("docfill_referees") || "{}",
+  ) as RefereeData;
+  return { ...profile, ...extra, ...refs };
 }
 
 /**
@@ -140,7 +211,9 @@ function buildFillMapping(
 // Match type badge helper
 // ---------------------------------------------------------------------------
 
-function MatchTypeBadge({ type }: { type: DetectedField["matchType"] }) {
+type MatchBadgeType = DetectedField["matchType"] | "visual";
+
+function MatchTypeBadge({ type }: { type: MatchBadgeType }) {
   if (type === "semantic") {
     return (
       <Badge
@@ -161,6 +234,16 @@ function MatchTypeBadge({ type }: { type: DetectedField["matchType"] }) {
       </Badge>
     );
   }
+  if (type === "visual") {
+    return (
+      <Badge
+        variant="outline"
+        className="text-[10px] px-1.5 py-0 h-5 bg-warning/10 text-warning border-warning/30 font-medium"
+      >
+        Visual
+      </Badge>
+    );
+  }
   return (
     <Badge
       variant="outline"
@@ -176,11 +259,19 @@ type Stage =
   | "extracting"
   | "no_fields"
   | "detected"
+  | "coord_detected"
   | "review"
+  | "coord_review"
   | "filling"
   | "complete";
 
-export function UploadPage() {
+type ReviewLang = "en" | "fr" | "ht";
+
+interface UploadPageProps {
+  templateId?: string | null;
+}
+
+export function UploadPage({ templateId }: UploadPageProps) {
   const [stage, setStage] = useState<Stage>("idle");
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -188,52 +279,122 @@ export function UploadPage() {
   const [extractionProgress, setExtractionProgress] = useState(0);
   const [pdfFieldNames, setPdfFieldNames] = useState<string[]>([]);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
+
+  // Coordinate mode state
+  const [coordSlots, setCoordSlots] = useState<CoordinateSlot[]>([]);
+  const [coordOverrides, setCoordOverrides] = useState<Record<string, string>>(
+    {},
+  );
+  const [fillMode, setFillMode] = useState<"acroform" | "coordinate">(
+    "acroform",
+  );
+
+  // N-400 smart detection banner
+  const [n400BannerDismissed, setN400BannerDismissed] = useState(false);
+
+  // Language toggle for Haitian forms
+  const [reviewLang, setReviewLang] = useState<ReviewLang>("en");
+
+  const isHaitianForm = templateId === "ds2029" || templateId === "i821";
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
 
+  // Check if the detected fields suggest an N-400
+  const isLikelyN400 = useCallback(
+    (fileName: string, fieldNames: string[]): boolean => {
+      if (templateId === "n400") return false; // already applied
+      const nameLower = fileName.toLowerCase();
+      const nameMatch =
+        nameLower.includes("n400") ||
+        nameLower.includes("n-400") ||
+        nameLower.includes("naturalization");
+      const n400Keywords = [
+        "alien",
+        "uscis",
+        "naturalization",
+        "a-number",
+        "a number",
+      ];
+      const fieldMatchCount = fieldNames.filter((f) =>
+        n400Keywords.some((kw) => f.toLowerCase().includes(kw)),
+      ).length;
+      return nameMatch || fieldMatchCount >= 3;
+    },
+    [templateId],
+  );
+
   // Auto-trigger extraction when file is dropped/selected
-  const triggerExtraction = useCallback((selectedFile: File) => {
-    setFile(selectedFile);
-    setStage("extracting");
-    setExtractionProgress(0);
-    setOverrides({});
+  const triggerExtraction = useCallback(
+    (selectedFile: File) => {
+      setFile(selectedFile);
+      setStage("extracting");
+      setExtractionProgress(0);
+      setOverrides({});
+      setCoordOverrides({});
+      setN400BannerDismissed(false);
 
-    const startTime = Date.now();
-    const duration = 3000;
+      const startTime = Date.now();
+      const duration = 3000;
 
-    if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
-    progressIntervalRef.current = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const pct = Math.min((elapsed / duration) * 95, 95);
-      setExtractionProgress(pct);
-      if (elapsed >= duration) {
-        if (progressIntervalRef.current)
-          clearInterval(progressIntervalRef.current);
-      }
-    }, 50);
-
-    setTimeout(async () => {
       if (progressIntervalRef.current)
         clearInterval(progressIntervalRef.current);
-      setExtractionProgress(100);
+      progressIntervalRef.current = setInterval(() => {
+        const elapsed = Date.now() - startTime;
+        const pct = Math.min((elapsed / duration) * 95, 95);
+        setExtractionProgress(pct);
+        if (elapsed >= duration) {
+          if (progressIntervalRef.current)
+            clearInterval(progressIntervalRef.current);
+        }
+      }, 50);
 
-      // Get real PDF field names
-      const realFieldNames = await getPdfFieldNames(selectedFile);
+      setTimeout(async () => {
+        if (progressIntervalRef.current)
+          clearInterval(progressIntervalRef.current);
+        setExtractionProgress(100);
 
-      if (realFieldNames.length === 0) {
-        setStage("no_fields");
-        return;
-      }
+        // Get real PDF field names
+        const realFieldNames = await getPdfFieldNames(selectedFile);
 
-      setPdfFieldNames(realFieldNames);
-      const profile = getProfileData();
-      const fields = buildDetectedFields(realFieldNames, profile);
-      setDetectedFields(fields);
-      setStage("detected");
-    }, 3000);
-  }, []);
+        if (realFieldNames.length === 0) {
+          // Coordinate detection path
+          const profile = getProfileData();
+          try {
+            const ab = await selectedFile.arrayBuffer();
+            const tempDoc = await PDFDocument.load(ab, {
+              ignoreEncryption: true,
+            });
+            const firstPage = tempDoc.getPage(0);
+            const { width, height } = firstPage.getSize();
+            const slots = detectCoordinateSlots(profile, width, height);
+            if (slots.length === 0) {
+              setStage("no_fields");
+              return;
+            }
+            setCoordSlots(slots);
+            setCoordOverrides({});
+            setFillMode("coordinate");
+            setStage("coord_detected");
+          } catch {
+            setStage("no_fields");
+          }
+          return;
+        }
+
+        setFillMode("acroform");
+        setPdfFieldNames(realFieldNames);
+        const profile = getProfileData();
+        const fields = buildDetectedFields(realFieldNames, profile);
+        setDetectedFields(fields);
+        setStage("detected");
+      }, 3000);
+    },
+    // biome-ignore lint/correctness/useExhaustiveDependencies: isLikelyN400 is a stable callback
+    [],
+  );
 
   // Clean up interval on unmount
   useEffect(() => {
@@ -274,6 +435,32 @@ export function UploadPage() {
     setStage("filling");
 
     try {
+      if (fillMode === "coordinate") {
+        const entriesToFill: CoordinateFillEntry[] = coordSlots
+          .map((slot) => ({
+            text:
+              coordOverrides[slot.profileKey] !== undefined
+                ? coordOverrides[slot.profileKey]
+                : slot.suggestedText,
+            x: slot.x,
+            y: slot.y,
+            page: slot.page,
+            fontSize: slot.fontSize,
+          }))
+          .filter((e) => e.text.trim().length > 0);
+
+        const outputFilename = file.name.replace(/\.pdf$/i, "_filled.pdf");
+        await fillAndDownloadPdfByCoordinates(
+          file,
+          entriesToFill,
+          outputFilename,
+        );
+        setStage("complete");
+        toast.success("Document filled and downloaded!");
+        return;
+      }
+
+      // AcroForm path
       const profile = getProfileData();
       const fillData = buildFillMapping(pdfFieldNames, overrides, profile);
       const outputFilename = file.name.replace(/\.pdf$/i, "_filled.pdf");
@@ -290,9 +477,9 @@ export function UploadPage() {
       toast.success("Document filled and downloaded!");
     } catch {
       toast.error("Failed to fill document. Please try again.");
-      setStage("review");
+      setStage(fillMode === "coordinate" ? "coord_detected" : "review");
     }
-  }, [file, pdfFieldNames, overrides]);
+  }, [file, pdfFieldNames, overrides, fillMode, coordSlots, coordOverrides]);
 
   const handleReset = useCallback(() => {
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -302,6 +489,11 @@ export function UploadPage() {
     setExtractionProgress(0);
     setPdfFieldNames([]);
     setOverrides({});
+    setCoordSlots([]);
+    setCoordOverrides({});
+    setFillMode("acroform");
+    setN400BannerDismissed(false);
+    setReviewLang("en");
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
@@ -316,9 +508,29 @@ export function UploadPage() {
     return { ...f, effectiveValue, hasMatch };
   });
 
+  // Effective coord slots for the review stage
+  const effectiveCoordSlots = coordSlots.map((slot) => ({
+    ...slot,
+    effectiveText:
+      coordOverrides[slot.profileKey] !== undefined
+        ? coordOverrides[slot.profileKey]
+        : slot.suggestedText,
+  }));
+
   const matchedFields = effectiveFields.filter((f) => f.hasMatch);
   const semanticCount = detectedFields.filter(
     (f) => f.matchType === "semantic",
+  ).length;
+
+  // N-400 detection banner visibility
+  const showN400Banner =
+    !n400BannerDismissed &&
+    stage === "detected" &&
+    file !== null &&
+    isLikelyN400(file.name, pdfFieldNames);
+
+  const filledCoordCount = effectiveCoordSlots.filter(
+    (s) => s.effectiveText.trim().length > 0,
   ).length;
 
   return (
@@ -329,12 +541,21 @@ export function UploadPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.35 }}
       >
-        <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-1">
-          Upload Portal
-        </h1>
-        <p className="text-muted-foreground text-sm">
-          Upload a PDF to detect fields and auto-fill from your profile
-        </p>
+        <div className="flex items-start justify-between flex-wrap gap-2">
+          <div>
+            <h1 className="font-display text-2xl md:text-3xl font-bold text-foreground mb-1">
+              Upload Portal
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Upload a PDF to detect fields and auto-fill from your profile
+              {templateId && (
+                <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                  Template: {templateId.toUpperCase().replace("-", " ")}
+                </span>
+              )}
+            </p>
+          </div>
+        </div>
       </motion.div>
 
       {/* Stage Cards */}
@@ -348,6 +569,21 @@ export function UploadPage() {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.3 }}
           >
+            {/* Photo Guide */}
+            {templateId && PHOTO_SPECS[templateId] && (
+              <div
+                data-ocid="upload.photo_guide.panel"
+                className="flex items-start gap-3 rounded-xl bg-blue-500/8 border border-blue-500/20 px-4 py-3 mb-4"
+              >
+                <Camera
+                  size={16}
+                  className="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5"
+                />
+                <p className="text-xs text-blue-700 dark:text-blue-400 leading-relaxed">
+                  {PHOTO_SPECS[templateId]}
+                </p>
+              </div>
+            )}
             <Card className="bento-card">
               <CardContent className="p-0">
                 <label
@@ -397,7 +633,7 @@ export function UploadPage() {
                     Choose PDF file
                   </Button>
                   <p className="text-xs text-muted-foreground mt-3">
-                    Supports fillable PDF forms up to 50MB
+                    Supports fillable and flat PDF forms up to 50MB
                   </p>
                   <input
                     id="pdf-file-input"
@@ -476,7 +712,7 @@ export function UploadPage() {
                     { label: "Parsing PDF", done: extractionProgress > 25 },
                     { label: "Field Detection", done: extractionProgress > 55 },
                     {
-                      label: "Semantic Mapping",
+                      label: "Coordinate Detection",
                       done: extractionProgress > 85,
                     },
                   ].map((step) => (
@@ -505,7 +741,7 @@ export function UploadPage() {
           </motion.div>
         )}
 
-        {/* NO FIELDS — Error State */}
+        {/* NO FIELDS — Error State (only shown when profile is empty too) */}
         {stage === "no_fields" && (
           <motion.div
             key="no_fields"
@@ -544,16 +780,16 @@ export function UploadPage() {
                   No Fillable Fields Detected
                 </h3>
                 <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-                  No fillable fields detected. Please upload a fillable PDF
-                  form.
+                  No fillable fields detected. Please upload a fillable PDF form
+                  or complete your Master Profile so coordinate placement can be
+                  used.
                 </p>
                 <div className="rounded-lg bg-muted/40 border border-border px-4 py-3 text-left mb-6 text-xs text-muted-foreground max-w-sm mx-auto">
                   <p className="font-medium text-foreground mb-1">Tip</p>
                   <p>
                     A fillable PDF is a form with interactive text fields.
-                    Scanned PDFs or flat documents do not have fillable fields.
-                    Look for PDFs labeled as "fillable form" or "interactive
-                    form."
+                    Scanned PDFs or flat documents can still be filled using
+                    coordinate-based placement if your Master Profile has data.
                   </p>
                 </div>
                 <Button
@@ -569,6 +805,160 @@ export function UploadPage() {
           </motion.div>
         )}
 
+        {/* COORD DETECTED — Visual Placement Preview */}
+        {stage === "coord_detected" && (
+          <motion.div
+            key="coord_detected"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.3 }}
+          >
+            <Card className="bento-card">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <CardTitle className="text-base font-semibold flex items-center gap-2">
+                    <MapPin size={16} className="text-warning" />
+                    Visual Placement Preview
+                    <Badge
+                      variant="outline"
+                      className="text-xs ml-1 bg-warning/10 text-warning border-warning/30"
+                    >
+                      {coordSlots.length} slot
+                      {coordSlots.length !== 1 ? "s" : ""}
+                    </Badge>
+                  </CardTitle>
+                  <Badge
+                    variant="outline"
+                    className="text-xs bg-warning/10 text-warning border-warning/30"
+                  >
+                    Coordinate Mode
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground pt-1">
+                  No native form fields detected — AI has mapped where your data
+                  should appear. Values are editable and only apply to this
+                  document.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div
+                  className="rounded-xl border border-border overflow-hidden mb-4"
+                  data-ocid="upload.coord_detected.table"
+                >
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="bg-muted/50 hover:bg-muted/50">
+                        <TableHead className="text-xs font-semibold text-muted-foreground w-[25%]">
+                          Label
+                        </TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground w-[40%]">
+                          Overlay Value
+                        </TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground w-[22%]">
+                          Position
+                        </TableHead>
+                        <TableHead className="text-xs font-semibold text-muted-foreground text-center w-[13%]">
+                          Match
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {coordSlots.map((slot, idx) => {
+                        const overrideVal = coordOverrides[slot.profileKey];
+                        const effectiveText =
+                          overrideVal !== undefined
+                            ? overrideVal
+                            : slot.suggestedText;
+                        const hasValue = effectiveText.trim().length > 0;
+
+                        return (
+                          <motion.tr
+                            key={`coord-${slot.profileKey}-${idx}`}
+                            initial={{ opacity: 0, x: -8 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.04, duration: 0.2 }}
+                            className="border-b border-border/60 hover:bg-muted/30 transition-colors"
+                          >
+                            {/* Label column */}
+                            <TableCell className="py-2">
+                              <div className="flex flex-col gap-0.5">
+                                <p className="text-sm font-medium text-foreground">
+                                  {slot.label}
+                                </p>
+                                <MatchTypeBadge type="visual" />
+                              </div>
+                            </TableCell>
+
+                            {/* Editable overlay value */}
+                            <TableCell className="py-1.5">
+                              <Input
+                                data-ocid={`upload.coord_field_override.input.${idx + 1}`}
+                                value={effectiveText}
+                                onChange={(e) => {
+                                  setCoordOverrides((prev) => ({
+                                    ...prev,
+                                    [slot.profileKey]: e.target.value,
+                                  }));
+                                }}
+                                placeholder="—"
+                                className="h-8 text-sm"
+                              />
+                            </TableCell>
+
+                            {/* Position badge */}
+                            <TableCell className="py-2">
+                              <span className="text-[10px] text-muted-foreground font-mono bg-muted/60 rounded px-1.5 py-0.5 whitespace-nowrap">
+                                ({Math.round(slot.x)}, {Math.round(slot.y)})
+                              </span>
+                            </TableCell>
+
+                            {/* Match checkmark */}
+                            <TableCell className="py-2 text-center">
+                              {hasValue ? (
+                                <CheckCircle2
+                                  size={16}
+                                  className="text-success inline-block"
+                                  aria-label="Has value"
+                                />
+                              ) : (
+                                <XCircle
+                                  size={16}
+                                  className="text-destructive inline-block"
+                                  aria-label="Empty"
+                                />
+                              )}
+                            </TableCell>
+                          </motion.tr>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+
+                <div className="flex gap-3 flex-wrap">
+                  <Button
+                    data-ocid="upload.coord_review.button"
+                    onClick={() => setStage("review")}
+                    className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary-glow"
+                  >
+                    <FileCheck size={16} />
+                    Proceed to Review
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleReset}
+                    className="gap-2"
+                  >
+                    <RotateCcw size={15} />
+                    Start over
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
         {/* DETECTED — Field Mapping Preview TABLE */}
         {stage === "detected" && (
           <motion.div
@@ -579,6 +969,55 @@ export function UploadPage() {
             transition={{ duration: 0.3 }}
           >
             <Card className="bento-card">
+              {/* N-400 Smart Detection Banner */}
+              <AnimatePresence>
+                {showN400Banner && (
+                  <motion.div
+                    key="n400-banner"
+                    data-ocid="upload.n400_detection.panel"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex items-center gap-3 px-5 py-3 bg-amber-500/10 border-b border-amber-500/20 flex-wrap"
+                  >
+                    <AlertCircle
+                      size={15}
+                      className="text-amber-600 dark:text-amber-400 flex-shrink-0"
+                    />
+                    <p className="text-xs text-amber-700 dark:text-amber-400 flex-1">
+                      This looks like an N-400 form. Apply N-400 Template Logic
+                      for better field matching?
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        data-ocid="upload.n400_detection.apply.button"
+                        size="sm"
+                        className="h-7 text-xs gap-1 bg-amber-600 hover:bg-amber-700 text-white"
+                        onClick={() => {
+                          const profile = getProfileData();
+                          const fields = buildDetectedFields(
+                            pdfFieldNames,
+                            profile,
+                          );
+                          setDetectedFields(fields);
+                          setN400BannerDismissed(true);
+                          toast.success("N-400 Template Logic applied");
+                        }}
+                      >
+                        Apply
+                      </Button>
+                      <button
+                        type="button"
+                        data-ocid="upload.n400_detection.dismiss_button"
+                        className="text-xs text-amber-600 hover:text-amber-800 dark:text-amber-400 underline"
+                        onClick={() => setN400BannerDismissed(true)}
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -741,7 +1180,7 @@ export function UploadPage() {
           </motion.div>
         )}
 
-        {/* REVIEW — Review & Generate */}
+        {/* REVIEW — Review & Generate (handles both acroform + coordinate modes) */}
         {(stage === "review" || stage === "filling") && (
           <motion.div
             key="review"
@@ -752,13 +1191,49 @@ export function UploadPage() {
           >
             <Card className="bento-card">
               <CardHeader className="pb-3">
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <FileCheck size={16} className="text-primary" />
-                  Review &amp; Generate
-                </CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Confirm the data to be injected into your document
-                </p>
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <CardTitle className="text-base font-semibold flex items-center gap-2">
+                      <FileCheck size={16} className="text-primary" />
+                      Review &amp; Generate
+                      {fillMode === "coordinate" && (
+                        <Badge
+                          variant="outline"
+                          className="text-xs ml-1 bg-warning/10 text-warning border-warning/30"
+                        >
+                          Coordinate Mode
+                        </Badge>
+                      )}
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {fillMode === "coordinate"
+                        ? "Confirm the data to be overlaid onto your document at the detected positions"
+                        : "Confirm the data to be injected into your document"}
+                    </p>
+                  </div>
+                  {/* Language toggle — shown only for Haitian forms */}
+                  {isHaitianForm && (
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <Globe size={13} className="text-muted-foreground" />
+                      {(["en", "fr", "ht"] as ReviewLang[]).map((lang) => (
+                        <button
+                          key={lang}
+                          type="button"
+                          data-ocid={`upload.lang.${lang}.toggle`}
+                          onClick={() => setReviewLang(lang)}
+                          className={cn(
+                            "px-2.5 py-1 rounded-full text-xs font-medium transition-all",
+                            reviewLang === lang
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80",
+                          )}
+                        >
+                          {lang === "ht" ? "Kreyòl" : lang.toUpperCase()}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </CardHeader>
               <CardContent>
                 {/* File info */}
@@ -771,20 +1246,76 @@ export function UploadPage() {
                       {file?.name}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {matchedFields.length} of {effectiveFields.length} fields
-                      will be filled
+                      {fillMode === "coordinate"
+                        ? `${filledCoordCount} of ${coordSlots.length} slots will be overlaid`
+                        : `${matchedFields.length} of ${effectiveFields.length} fields will be filled`}
                     </p>
                   </div>
                   <Badge
                     variant="secondary"
                     className="text-xs bg-success/10 text-success border-success/20 flex-shrink-0"
                   >
-                    {matchedFields.length} fills
+                    {fillMode === "coordinate"
+                      ? `${filledCoordCount} overlays`
+                      : `${matchedFields.length} fills`}
                   </Badge>
                 </div>
 
-                {/* Summary table — only matched fields with effective values */}
-                {matchedFields.length > 0 ? (
+                {/* Summary table */}
+                {fillMode === "coordinate" ? (
+                  effectiveCoordSlots.filter((s) => s.effectiveText.trim())
+                    .length > 0 ? (
+                    <div className="rounded-xl border border-border overflow-hidden mb-4">
+                      <Table>
+                        <TableHeader>
+                          <TableRow className="bg-muted/50 hover:bg-muted/50">
+                            <TableHead className="text-xs font-semibold text-muted-foreground">
+                              Field
+                            </TableHead>
+                            <TableHead className="text-xs font-semibold text-muted-foreground">
+                              Value
+                            </TableHead>
+                            <TableHead className="text-xs font-semibold text-muted-foreground">
+                              Position
+                            </TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {effectiveCoordSlots
+                            .filter((s) => s.effectiveText.trim())
+                            .map((slot, idx) => (
+                              <TableRow
+                                key={`coord-review-${slot.profileKey}-${idx}`}
+                                className="border-b border-border/60 hover:bg-muted/30"
+                              >
+                                <TableCell className="py-2.5 text-sm font-medium text-foreground">
+                                  {slot.label}
+                                </TableCell>
+                                <TableCell className="py-2.5 text-sm text-foreground">
+                                  {slot.effectiveText}
+                                </TableCell>
+                                <TableCell className="py-2.5">
+                                  <span className="text-[10px] text-muted-foreground font-mono bg-muted/60 rounded px-1.5 py-0.5 whitespace-nowrap">
+                                    ({Math.round(slot.x)}, {Math.round(slot.y)})
+                                  </span>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-border bg-muted/20 p-6 text-center mb-4">
+                      <p className="text-sm text-muted-foreground">
+                        No overlay data available.{" "}
+                        <span className="text-primary">
+                          Complete your profile
+                        </span>{" "}
+                        to enable auto-fill.
+                      </p>
+                    </div>
+                  )
+                ) : matchedFields.length > 0 ? (
                   <div className="rounded-xl border border-border overflow-hidden mb-4">
                     <Table>
                       <TableHeader>
@@ -798,32 +1329,41 @@ export function UploadPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {matchedFields.map((field, idx) => (
-                          <TableRow
-                            key={`review-${field.label}-${idx}`}
-                            className="border-b border-border/60 hover:bg-muted/30"
-                          >
-                            <TableCell className="py-2.5 text-sm font-medium text-foreground">
-                              <span title={field.label}>
-                                {field.masterLabel ?? field.label}
-                              </span>
-                            </TableCell>
-                            <TableCell className="py-2.5 text-sm text-foreground">
-                              {field.profileKey === "dob" &&
-                              field.effectiveValue
-                                ? (() => {
-                                    try {
-                                      return new Date(
-                                        field.effectiveValue,
-                                      ).toLocaleDateString();
-                                    } catch {
-                                      return field.effectiveValue;
-                                    }
-                                  })()
-                                : field.effectiveValue}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {matchedFields.map((field, idx) => {
+                          const displayLabel = field.masterLabel ?? field.label;
+                          const translatedLabel =
+                            reviewLang !== "en" && field.masterLabel
+                              ? (FIELD_LABEL_TRANSLATIONS[reviewLang]?.[
+                                  field.masterLabel
+                                ] ?? displayLabel)
+                              : displayLabel;
+                          return (
+                            <TableRow
+                              key={`review-${field.label}-${idx}`}
+                              className="border-b border-border/60 hover:bg-muted/30"
+                            >
+                              <TableCell className="py-2.5 text-sm font-medium text-foreground">
+                                <span title={field.label}>
+                                  {translatedLabel}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-2.5 text-sm text-foreground">
+                                {field.profileKey === "dob" &&
+                                field.effectiveValue
+                                  ? (() => {
+                                      try {
+                                        return new Date(
+                                          field.effectiveValue,
+                                        ).toLocaleDateString();
+                                      } catch {
+                                        return field.effectiveValue;
+                                      }
+                                    })()
+                                  : field.effectiveValue}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </div>
@@ -858,7 +1398,13 @@ export function UploadPage() {
                   <Button
                     data-ocid="upload.review.back.button"
                     variant="outline"
-                    onClick={() => setStage("detected")}
+                    onClick={() =>
+                      setStage(
+                        fillMode === "coordinate"
+                          ? "coord_detected"
+                          : "detected",
+                      )
+                    }
                     disabled={stage === "filling"}
                     className="gap-2"
                   >
@@ -933,13 +1479,13 @@ export function UploadPage() {
                     step: "1",
                     icon: Upload,
                     title: "Upload PDF",
-                    desc: "Drag and drop or select your fillable PDF form",
+                    desc: "Drag and drop or select any PDF — fillable forms or flat documents",
                   },
                   {
                     step: "2",
                     icon: Brain,
-                    title: "Semantic Mapping",
-                    desc: "Semantic mapping understands field labels like 'Legal Name' to match your profile",
+                    title: "AI Detection",
+                    desc: "AI maps field labels using semantic understanding, or detects placement coordinates for flat documents.",
                   },
                   {
                     step: "3",

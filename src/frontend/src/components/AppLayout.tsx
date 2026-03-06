@@ -5,6 +5,7 @@ import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import { useGetCallerUserProfile } from "@/hooks/useQueries";
 import { cn } from "@/lib/utils";
 import {
+  BookOpen,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -16,7 +17,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-type Page = "dashboard" | "profile" | "upload" | "documents";
+type Page = "dashboard" | "profile" | "upload" | "documents" | "templates";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -26,6 +27,7 @@ interface AppLayoutProps {
 
 const navItems: { id: Page; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "templates", label: "Templates", icon: BookOpen },
   { id: "profile", label: "Profile", icon: User },
   { id: "upload", label: "Upload", icon: Upload },
   { id: "documents", label: "Documents", icon: FileText },

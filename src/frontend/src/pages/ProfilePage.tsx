@@ -42,6 +42,7 @@ import {
   Shield,
   Trash2,
   User,
+  Users,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -59,7 +60,19 @@ interface ExtraProfile {
   jobTitle: string;
 }
 
+interface RefereeProfile {
+  referee1Name: string;
+  referee1Relationship: string;
+  referee1Phone: string;
+  referee1Address: string;
+  referee2Name: string;
+  referee2Relationship: string;
+  referee2Phone: string;
+  referee2Address: string;
+}
+
 const EXTRA_KEY = "docfill_profile_extra";
+const REFEREES_KEY = "docfill_referees";
 const PRIVACY_KEY = "docfill_privacy_mode";
 
 const EMPTY_EXTRA: ExtraProfile = {
@@ -73,6 +86,28 @@ const EMPTY_EXTRA: ExtraProfile = {
   employer: "",
   jobTitle: "",
 };
+
+const EMPTY_REFEREES: RefereeProfile = {
+  referee1Name: "",
+  referee1Relationship: "",
+  referee1Phone: "",
+  referee1Address: "",
+  referee2Name: "",
+  referee2Relationship: "",
+  referee2Phone: "",
+  referee2Address: "",
+};
+
+function loadReferees(): RefereeProfile {
+  try {
+    const parsed = JSON.parse(
+      localStorage.getItem(REFEREES_KEY) || "{}",
+    ) as Partial<RefereeProfile>;
+    return { ...EMPTY_REFEREES, ...parsed };
+  } catch {
+    return { ...EMPTY_REFEREES };
+  }
+}
 
 function loadExtra(): ExtraProfile {
   try {
@@ -110,6 +145,16 @@ export function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
 
+  // Referee state
+  const [referee1Name, setReferee1Name] = useState("");
+  const [referee1Relationship, setReferee1Relationship] = useState("");
+  const [referee1Phone, setReferee1Phone] = useState("");
+  const [referee1Address, setReferee1Address] = useState("");
+  const [referee2Name, setReferee2Name] = useState("");
+  const [referee2Relationship, setReferee2Relationship] = useState("");
+  const [referee2Phone, setReferee2Phone] = useState("");
+  const [referee2Address, setReferee2Address] = useState("");
+
   // Load profile name/email from backend
   useEffect(() => {
     if (profile) {
@@ -132,6 +177,16 @@ export function ProfilePage() {
       setIdNumber(extra.idNumber);
       setEmployer(extra.employer);
       setJobTitle(extra.jobTitle);
+
+      const refs = loadReferees();
+      setReferee1Name(refs.referee1Name);
+      setReferee1Relationship(refs.referee1Relationship);
+      setReferee1Phone(refs.referee1Phone);
+      setReferee1Address(refs.referee1Address);
+      setReferee2Name(refs.referee2Name);
+      setReferee2Relationship(refs.referee2Relationship);
+      setReferee2Phone(refs.referee2Phone);
+      setReferee2Address(refs.referee2Address);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -150,6 +205,14 @@ export function ProfilePage() {
       setIdNumber("");
       setEmployer("");
       setJobTitle("");
+      setReferee1Name("");
+      setReferee1Relationship("");
+      setReferee1Phone("");
+      setReferee1Address("");
+      setReferee2Name("");
+      setReferee2Relationship("");
+      setReferee2Phone("");
+      setReferee2Address("");
       toast.info("Privacy Mode enabled — data won't be saved to localStorage");
     } else {
       toast.info("Privacy Mode disabled — data will persist after refresh");
@@ -192,6 +255,18 @@ export function ProfilePage() {
           jobTitle,
         };
         localStorage.setItem(EXTRA_KEY, JSON.stringify(extra));
+
+        const refs: RefereeProfile = {
+          referee1Name,
+          referee1Relationship,
+          referee1Phone,
+          referee1Address,
+          referee2Name,
+          referee2Relationship,
+          referee2Phone,
+          referee2Address,
+        };
+        localStorage.setItem(REFEREES_KEY, JSON.stringify(refs));
       }
 
       setSaved(true);
@@ -207,6 +282,7 @@ export function ProfilePage() {
       const principal = identity?.getPrincipal().toString() || "";
       await saveProfile({ id: principal, name: "", email: "" });
       localStorage.setItem(EXTRA_KEY, JSON.stringify({}));
+      localStorage.setItem(REFEREES_KEY, JSON.stringify({}));
       setName("");
       setEmail("");
       setPhone("");
@@ -218,6 +294,14 @@ export function ProfilePage() {
       setIdNumber("");
       setEmployer("");
       setJobTitle("");
+      setReferee1Name("");
+      setReferee1Relationship("");
+      setReferee1Phone("");
+      setReferee1Address("");
+      setReferee2Name("");
+      setReferee2Relationship("");
+      setReferee2Phone("");
+      setReferee2Address("");
       setClearDialogOpen(false);
       toast.success("Profile cleared");
     } catch {
@@ -605,6 +689,175 @@ export function ProfilePage() {
                   placeholder="Software Engineer"
                   className="h-10"
                 />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+
+      {/* Referees / Sponsors */}
+      <motion.div
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.28, duration: 0.35 }}
+      >
+        <Card className="bento-card">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users size={18} className="text-primary" />
+              Referees / Sponsors
+            </CardTitle>
+            <CardDescription>
+              Referee or sponsor details for immigration and naturalization
+              forms (bonus fields — not counted in completeness)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Referee 1 */}
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-bold">
+                  1
+                </span>
+                Referee / Sponsor 1
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="referee1Name" className="text-sm font-medium">
+                    Full Name
+                  </Label>
+                  <Input
+                    id="referee1Name"
+                    data-ocid="profile.referee1.name.input"
+                    value={referee1Name}
+                    onChange={(e) => setReferee1Name(e.target.value)}
+                    placeholder="John Doe"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="referee1Relationship"
+                    className="text-sm font-medium"
+                  >
+                    Relationship
+                  </Label>
+                  <Input
+                    id="referee1Relationship"
+                    value={referee1Relationship}
+                    onChange={(e) => setReferee1Relationship(e.target.value)}
+                    placeholder="Friend, Colleague, etc."
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="referee1Phone"
+                    className="text-sm font-medium"
+                  >
+                    Phone
+                  </Label>
+                  <Input
+                    id="referee1Phone"
+                    data-ocid="profile.referee1.phone.input"
+                    type="tel"
+                    value={referee1Phone}
+                    onChange={(e) => setReferee1Phone(e.target.value)}
+                    placeholder="+1 (555) 000-0000"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="referee1Address"
+                    className="text-sm font-medium"
+                  >
+                    Address
+                  </Label>
+                  <Input
+                    id="referee1Address"
+                    data-ocid="profile.referee1.address.input"
+                    value={referee1Address}
+                    onChange={(e) => setReferee1Address(e.target.value)}
+                    placeholder="123 Main St, City, State"
+                    className="h-10"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-border/60" />
+
+            {/* Referee 2 */}
+            <div className="space-y-3">
+              <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-bold">
+                  2
+                </span>
+                Referee / Sponsor 2
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="referee2Name" className="text-sm font-medium">
+                    Full Name
+                  </Label>
+                  <Input
+                    id="referee2Name"
+                    data-ocid="profile.referee2.name.input"
+                    value={referee2Name}
+                    onChange={(e) => setReferee2Name(e.target.value)}
+                    placeholder="Jane Smith"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="referee2Relationship"
+                    className="text-sm font-medium"
+                  >
+                    Relationship
+                  </Label>
+                  <Input
+                    id="referee2Relationship"
+                    value={referee2Relationship}
+                    onChange={(e) => setReferee2Relationship(e.target.value)}
+                    placeholder="Friend, Colleague, etc."
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="referee2Phone"
+                    className="text-sm font-medium"
+                  >
+                    Phone
+                  </Label>
+                  <Input
+                    id="referee2Phone"
+                    data-ocid="profile.referee2.phone.input"
+                    type="tel"
+                    value={referee2Phone}
+                    onChange={(e) => setReferee2Phone(e.target.value)}
+                    placeholder="+1 (555) 000-0000"
+                    className="h-10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label
+                    htmlFor="referee2Address"
+                    className="text-sm font-medium"
+                  >
+                    Address
+                  </Label>
+                  <Input
+                    id="referee2Address"
+                    data-ocid="profile.referee2.address.input"
+                    value={referee2Address}
+                    onChange={(e) => setReferee2Address(e.target.value)}
+                    placeholder="456 Oak Ave, City, State"
+                    className="h-10"
+                  />
+                </div>
               </div>
             </div>
           </CardContent>
