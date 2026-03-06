@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "Plus Jakarta Sans";
+  src: url("/assets/fonts/PlusJakartaSans-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Outfit";
+  src: url("/assets/fonts/Outfit-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@layer base {
+  :root {
+    --radius: 0.75rem;
+
+    /* Slate Blue palette — clean, professional */
+    --background: 0.98 0.004 240;
+    --foreground: 0.18 0.025 255;
+
+    --card: 1 0 0;
+    --card-foreground: 0.18 0.025 255;
+
+    --popover: 1 0 0;
+    --popover-foreground: 0.18 0.025 255;
+
+    /* Slate Blue primary */
+    --primary: 0.45 0.13 255;
+    --primary-foreground: 0.99 0 0;
+
+    --secondary: 0.94 0.02 240;
+    --secondary-foreground: 0.35 0.08 255;
+
+    --muted: 0.95 0.01 240;
+    --muted-foreground: 0.52 0.04 240;
+
+    --accent: 0.92 0.04 240;
+    --accent-foreground: 0.35 0.08 255;
+
+    --destructive: 0.577 0.245 27.325;
+    --destructive-foreground: 0.985 0 0;
+
+    --success: 0.58 0.16 155;
+    --success-foreground: 0.99 0 0;
+
+    --warning: 0.72 0.18 65;
+    --warning-foreground: 0.18 0.02 65;
+
+    --border: 0.88 0.02 240;
+    --input: 0.9 0.02 240;
+    --ring: 0.45 0.13 255;
+
+    --chart-1: 0.45 0.13 255;
+    --chart-2: 0.6 0.12 200;
+    --chart-3: 0.55 0.15 280;
+    --chart-4: 0.65 0.14 160;
+    --chart-5: 0.7 0.12 35;
+
+    --sidebar: 0.97 0.01 240;
+    --sidebar-foreground: 0.18 0.025 255;
+    --sidebar-primary: 0.45 0.13 255;
+    --sidebar-primary-foreground: 0.99 0 0;
+    --sidebar-accent: 0.92 0.04 240;
+    --sidebar-accent-foreground: 0.35 0.08 255;
+    --sidebar-border: 0.88 0.02 240;
+    --sidebar-ring: 0.45 0.13 255;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: "Outfit", "Plus Jakarta Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: "Plus Jakarta Sans", "Outfit", system-ui, sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(12, 1fr);
+    gap: 1.25rem;
+  }
+
+  .bento-card {
+    @apply rounded-2xl bg-card border border-border shadow-sm transition-all duration-200 hover:shadow-md;
+  }
+
+  .gradient-mesh {
+    background: 
+      radial-gradient(ellipse at 20% 20%, oklch(0.88 0.08 255 / 0.4) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, oklch(0.88 0.06 280 / 0.3) 0%, transparent 50%),
+      oklch(0.98 0.004 240);
+  }
+
+  .sidebar-shadow {
+    box-shadow: 4px 0 24px 0 oklch(0.18 0.025 255 / 0.06);
+  }
+
+  .card-hover {
+    @apply transition-all duration-200 hover:translate-y-[-2px] hover:shadow-lg;
+  }
+
+  .glass-card {
+    backdrop-filter: blur(12px);
+    background: oklch(1 0 0 / 0.85);
+    border: 1px solid oklch(0.88 0.02 240 / 0.8);
+  }
+}
