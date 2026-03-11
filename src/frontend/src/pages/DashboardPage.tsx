@@ -1,16 +1,30 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { useDocumentStore } from "@/hooks/useDocumentStore";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import { useGetCallerUserProfile } from "@/hooks/useQueries";
+import { fetchPublicForm } from "@/lib/publicFormFetch";
+import {
+  type PublicForm,
+  getTrendingForms,
+  searchForms,
+} from "@/lib/publicFormLibrary";
 import {
   ArrowRight,
   CheckCircle2,
   Clock,
+  Download,
   FileText,
+  Globe,
+  Loader2,
+  Search,
+  Shield,
   Star,
   TrendingUp,
   Upload,
@@ -18,7 +32,8 @@ import {
   Zap,
 } from "lucide-react";
 import { type Variants, motion } from "motion/react";
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 
 type Page = "dashboard" | "profile" | "upload" | "documents";
 
@@ -55,7 +70,7 @@ const container: Variants = {
   },
 };
 
-const item: Variants = {
+const itemVariant: Variants = {
   hidden: { opacity: 0, y: 16 },
   show: {
     opacity: 1,
@@ -63,6 +78,20 @@ const item: Variants = {
     transition: { duration: 0.35, ease: [0.25, 0.1, 0.25, 1] },
   },
 };
+
+const CATEGORY_COLORS: Record<string, string> = {
+  Tax: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
+  Immigration: "bg-blue-500/15 text-blue-700 dark:text-blue-400",
+  Employment: "bg-violet-500/15 text-violet-700 dark:text-violet-400",
+  "Real Estate": "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
+  "Social Security": "bg-rose-500/15 text-rose-700 dark:text-rose-400",
+  Health: "bg-cyan-500/15 text-cyan-700 dark:text-cyan-400",
+};
+
+function formatDownloadCount(n: number): string {
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
+}
 
 export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const { data: profile, isLoading: profileLoading } =
@@ -87,6 +116,61 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const displayName =
     profile?.name || identity?.getPrincipal().toString().slice(0, 8) || "User";
   const firstName = displayName.split(" ")[0];
+
+  // Public Library state
+  const [publicLibraryMode, setPublicLibraryMode] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PublicForm[]>([]);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [fetchingFormId, setFetchingFormId] = useState<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const trendingForms = useMemo(() => getTrendingForms(5), []);
+
+  const handleSearch = () => {
+    const results = searchForms(searchQuery);
+    setSearchResults(results);
+    setHasSearched(true);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSearch();
+  };
+
+  const handleFetchForm = async (form: PublicForm) => {
+    if (fetchingFormId) return;
+    setFetchingFormId(form.id);
+    try {
+      const { blob, fileName } = await fetchPublicForm(form);
+
+      // Encode blob as base64 for sessionStorage
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = (reader.result as string).split(",")[1];
+        sessionStorage.setItem(
+          "docfill_public_form",
+          JSON.stringify({
+            base64,
+            fileName,
+            formName: form.name,
+            domain: form.domain,
+            isVerified: form.isGov,
+            fromPublicLibrary: true,
+            category: form.category,
+          }),
+        );
+        toast.success("Form loaded \u2014 running field recognition...");
+        setTimeout(() => {
+          onNavigate("upload");
+        }, 1500);
+      };
+      reader.readAsDataURL(blob);
+    } catch {
+      toast.error("Failed to fetch form. Please try again.");
+    } finally {
+      setFetchingFormId(null);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -113,7 +197,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"
       >
         {/* Profile Completeness — span 2 cols on large */}
-        <motion.div variants={item} className="lg:col-span-2">
+        <motion.div variants={itemVariant} className="lg:col-span-2">
           <Card className="bento-card h-full">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -146,57 +230,26 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                   <Progress value={completionPct} className="h-3 mb-4" />
                   <div className="grid grid-cols-3 gap-3 mb-4">
                     {[
-                      {
-                        label: "Name",
-                        done: !!profile?.name,
-                      },
-                      {
-                        label: "Email",
-                        done: !!profile?.email,
-                      },
-                      {
-                        label: "Phone",
-                        done: !!extraProfile.phone,
-                      },
-                      {
-                        label: "Street",
-                        done: !!extraProfile.street,
-                      },
-                      {
-                        label: "City",
-                        done: !!extraProfile.city,
-                      },
-                      {
-                        label: "State",
-                        done: !!extraProfile.state,
-                      },
-                      {
-                        label: "Zip",
-                        done: !!extraProfile.zip,
-                      },
-                      {
-                        label: "Date of Birth",
-                        done: !!extraProfile.dob,
-                      },
-                      {
-                        label: "ID Number",
-                        done: !!extraProfile.idNumber,
-                      },
-                      {
-                        label: "Employer",
-                        done: !!extraProfile.employer,
-                      },
-                      {
-                        label: "Job Title",
-                        done: !!extraProfile.jobTitle,
-                      },
+                      { label: "Name", done: !!profile?.name },
+                      { label: "Email", done: !!profile?.email },
+                      { label: "Phone", done: !!extraProfile.phone },
+                      { label: "Street", done: !!extraProfile.street },
+                      { label: "City", done: !!extraProfile.city },
+                      { label: "State", done: !!extraProfile.state },
+                      { label: "Zip", done: !!extraProfile.zip },
+                      { label: "Date of Birth", done: !!extraProfile.dob },
+                      { label: "ID Number", done: !!extraProfile.idNumber },
+                      { label: "Employer", done: !!extraProfile.employer },
+                      { label: "Job Title", done: !!extraProfile.jobTitle },
                     ].map((field) => (
                       <div
                         key={field.label}
                         className="flex items-center gap-2"
                       >
                         <div
-                          className={`w-2 h-2 rounded-full flex-shrink-0 ${field.done ? "bg-success" : "bg-border"}`}
+                          className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                            field.done ? "bg-success" : "bg-border"
+                          }`}
                         />
                         <span className="text-xs text-muted-foreground truncate">
                           {field.label}
@@ -210,6 +263,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                       size="sm"
                       onClick={() => onNavigate("profile")}
                       className="gap-1.5 text-primary border-primary/30 hover:bg-primary/5"
+                      data-ocid="dashboard.profile.button"
                     >
                       Complete Profile <ArrowRight size={14} />
                     </Button>
@@ -227,7 +281,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </motion.div>
 
         {/* Stats card */}
-        <motion.div variants={item}>
+        <motion.div variants={itemVariant}>
           <Card className="bento-card h-full">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
@@ -265,10 +319,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </motion.div>
 
         {/* Quick Upload */}
-        <motion.div variants={item}>
+        <motion.div variants={itemVariant}>
           <Card
             className="bento-card h-full cursor-pointer card-hover group"
             onClick={() => onNavigate("upload")}
+            data-ocid="dashboard.upload.button"
           >
             <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
               <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
@@ -291,7 +346,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </motion.div>
 
         {/* Recent documents */}
-        <motion.div variants={item} className="md:col-span-2">
+        <motion.div variants={itemVariant} className="md:col-span-2">
           <Card className="bento-card h-full">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -306,6 +361,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                   size="sm"
                   onClick={() => onNavigate("documents")}
                   className="text-primary hover:text-primary gap-1 text-xs"
+                  data-ocid="dashboard.documents.button"
                 >
                   View all <ArrowRight size={12} />
                 </Button>
@@ -313,7 +369,10 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
             </CardHeader>
             <CardContent>
               {recentDocs.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
+                <div
+                  className="flex flex-col items-center justify-center py-8 text-center"
+                  data-ocid="documents.empty_state"
+                >
                   <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center mb-3">
                     <FileText size={20} className="text-muted-foreground/50" />
                   </div>
@@ -365,7 +424,7 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
         </motion.div>
 
         {/* Tips card */}
-        <motion.div variants={item}>
+        <motion.div variants={itemVariant}>
           <Card className="bento-card h-full overflow-hidden relative">
             <div className="absolute inset-0 bg-gradient-to-br from-primary/8 via-transparent to-chart-2/8" />
             <CardContent className="relative py-6 px-5 space-y-3">
@@ -394,7 +453,348 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
           </Card>
         </motion.div>
       </motion.div>
+
+      {/* ============================================================
+          PUBLIC LIBRARY SECTION
+      ============================================================ */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, delay: 0.3 }}
+        className="space-y-5"
+      >
+        {/* Section header with toggle */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="font-display text-xl font-bold text-foreground flex items-center gap-2">
+              <Globe size={20} className="text-primary" />
+              Template Search
+            </h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              {publicLibraryMode
+                ? "Browsing global public forms from official .gov sources"
+                : "Search your uploaded documents or switch to the public library"}
+            </p>
+          </div>
+          <div className="flex items-center gap-3 bg-muted/50 rounded-xl px-4 py-2.5">
+            <Label
+              htmlFor="public-library-toggle"
+              className="text-sm font-medium text-muted-foreground cursor-pointer"
+            >
+              My Uploads
+            </Label>
+            <Switch
+              id="public-library-toggle"
+              checked={publicLibraryMode}
+              onCheckedChange={(v) => {
+                setPublicLibraryMode(v);
+                if (!v) {
+                  setSearchQuery("");
+                  setSearchResults([]);
+                  setHasSearched(false);
+                }
+              }}
+              data-ocid="library.toggle"
+            />
+            <Label
+              htmlFor="public-library-toggle"
+              className="text-sm font-medium text-foreground cursor-pointer"
+            >
+              Global Public Forms
+            </Label>
+          </div>
+        </div>
+
+        {publicLibraryMode && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
+            className="space-y-6"
+          >
+            {/* Search bar */}
+            <Card className="bento-card">
+              <CardContent className="pt-5 pb-4">
+                <div className="flex gap-3">
+                  <div className="relative flex-1">
+                    <Search
+                      size={16}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    />
+                    <Input
+                      ref={searchInputRef}
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      onKeyDown={handleKeyDown}
+                      placeholder="Search for a public form (e.g., 'IRS W9' or 'California Rental Agreement')"
+                      className="pl-9"
+                      data-ocid="library.search_input"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleSearch}
+                    className="gap-2 px-5"
+                    data-ocid="library.search.button"
+                  >
+                    <Search size={15} />
+                    Search
+                  </Button>
+                </div>
+
+                {/* Search Results */}
+                {hasSearched && (
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    className="mt-4 space-y-2"
+                  >
+                    {searchResults.length === 0 ? (
+                      <div
+                        className="text-center py-6 text-muted-foreground text-sm"
+                        data-ocid="library.empty_state"
+                      >
+                        No forms found matching &ldquo;{searchQuery}&rdquo;. Try
+                        terms like &ldquo;W-9&rdquo;, &ldquo;I-9&rdquo;, or
+                        &ldquo;rental&rdquo;.
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted-foreground mb-3">
+                          {searchResults.length} result
+                          {searchResults.length !== 1 ? "s" : ""} found
+                        </p>
+                        {searchResults.map((form, idx) => (
+                          <SearchResultCard
+                            key={form.id}
+                            form={form}
+                            index={idx + 1}
+                            isFetching={fetchingFormId === form.id}
+                            onFetch={handleFetchForm}
+                          />
+                        ))}
+                      </>
+                    )}
+                  </motion.div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Trending Forms */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp size={16} className="text-primary" />
+                <h3 className="font-semibold text-foreground">
+                  Trending Forms
+                </h3>
+                <Badge variant="secondary" className="text-xs">
+                  Top 5
+                </Badge>
+              </div>
+              <div className="flex gap-3 overflow-x-auto pb-3 scrollbar-thin">
+                {trendingForms.map((form, idx) => (
+                  <TrendingFormCard
+                    key={form.id}
+                    form={form}
+                    rank={idx + 1}
+                    isFetching={fetchingFormId === form.id}
+                    onFetch={handleFetchForm}
+                  />
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {!publicLibraryMode && (
+          <Card className="bento-card">
+            <CardContent className="py-10 text-center">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                <Globe size={24} className="text-primary" />
+              </div>
+              <p className="font-medium text-foreground mb-1">
+                Access 12+ Official Government Forms
+              </p>
+              <p className="text-sm text-muted-foreground mb-4">
+                Toggle &ldquo;Global Public Forms&rdquo; to search and fetch
+                official PDFs from .gov sources directly into your workspace.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPublicLibraryMode(true)}
+                className="gap-2 text-primary border-primary/30 hover:bg-primary/5"
+                data-ocid="library.open_modal_button"
+              >
+                <Globe size={14} />
+                Open Public Library
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </motion.div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Search Result Card
+// ---------------------------------------------------------------------------
+
+interface SearchResultCardProps {
+  form: PublicForm;
+  index: number;
+  isFetching: boolean;
+  onFetch: (form: PublicForm) => void;
+}
+
+function SearchResultCard({
+  form,
+  index,
+  isFetching,
+  onFetch,
+}: SearchResultCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -8 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: index * 0.04 }}
+      data-ocid={`library.item.${index}`}
+      className="flex items-center gap-4 p-4 rounded-xl border border-border/50 bg-card hover:bg-muted/30 transition-colors group"
+    >
+      <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+        <FileText size={18} className="text-primary" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap mb-0.5">
+          <span className="font-semibold text-sm text-foreground">
+            {form.name}
+          </span>
+          {form.isGov && (
+            <Badge
+              variant="outline"
+              className="text-xs gap-1 border-emerald-500/50 text-emerald-600 bg-emerald-500/8 py-0"
+            >
+              <Shield size={10} />
+              Source Verified
+            </Badge>
+          )}
+          <Badge
+            variant="outline"
+            className={`text-xs py-0 border-0 ${
+              CATEGORY_COLORS[form.category] ||
+              "bg-secondary text-secondary-foreground"
+            }`}
+          >
+            {form.category}
+          </Badge>
+        </div>
+        <p className="text-xs text-muted-foreground truncate">
+          {form.description}
+        </p>
+        <div className="flex items-center gap-3 mt-1">
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <Globe size={10} />
+            {form.domain}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            ~{form.fieldCount} fields
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {formatDownloadCount(form.downloadCount)} downloads
+          </span>
+        </div>
+      </div>
+      <Button
+        size="sm"
+        onClick={() => onFetch(form)}
+        disabled={isFetching}
+        className="gap-2 flex-shrink-0"
+        data-ocid={`library.item.${index}.primary_button`}
+      >
+        {isFetching ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <Download size={14} />
+        )}
+        {isFetching ? "Fetching..." : "Use Official Version"}
+      </Button>
+    </motion.div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Trending Form Card
+// ---------------------------------------------------------------------------
+
+interface TrendingFormCardProps {
+  form: PublicForm;
+  rank: number;
+  isFetching: boolean;
+  onFetch: (form: PublicForm) => void;
+}
+
+function TrendingFormCard({
+  form,
+  rank,
+  isFetching,
+  onFetch,
+}: TrendingFormCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: rank * 0.06 }}
+      data-ocid={`trending.item.${rank}`}
+      className="relative flex-shrink-0 w-52 rounded-2xl border border-border/60 bg-card p-4 hover:border-primary/40 hover:shadow-md transition-all duration-200 group cursor-pointer"
+    >
+      {/* Rank badge */}
+      <div className="absolute -top-2 -left-2 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center shadow">
+        {rank}
+      </div>
+
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <p className="font-semibold text-sm text-foreground leading-tight">
+            {form.name}
+          </p>
+          {form.isGov && (
+            <Shield
+              size={13}
+              className="text-emerald-500 flex-shrink-0 mt-0.5"
+            />
+          )}
+        </div>
+        <Badge
+          variant="outline"
+          className={`text-xs py-0 border-0 ${
+            CATEGORY_COLORS[form.category] ||
+            "bg-secondary text-secondary-foreground"
+          }`}
+        >
+          {form.category}
+        </Badge>
+      </div>
+
+      <div className="flex items-center gap-1 text-xs text-muted-foreground mb-3">
+        <Download size={11} />
+        <span>{formatDownloadCount(form.downloadCount)} downloads</span>
+      </div>
+
+      <Button
+        size="sm"
+        className="w-full gap-2 text-xs"
+        onClick={() => onFetch(form)}
+        disabled={isFetching}
+        data-ocid={`trending.item.${rank}.primary_button`}
+      >
+        {isFetching ? (
+          <Loader2 size={12} className="animate-spin" />
+        ) : (
+          <Download size={12} />
+        )}
+        {isFetching ? "Fetching..." : "Download & Fill"}
+      </Button>
+    </motion.div>
   );
 }
 
