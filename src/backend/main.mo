@@ -8,11 +8,11 @@ import Map "mo:core/Map";
 import Principal "mo:core/Principal";
 import Text "mo:core/Text";
 import Runtime "mo:core/Runtime";
-import Migration "migration";
+
 import Iter "mo:core/Iter";
 import Time "mo:core/Time";
 
-(with migration = Migration.run)
+
 actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);

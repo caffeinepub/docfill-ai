@@ -1,9 +1,13 @@
+import { type MismatchWarning, validateFieldValue } from "./labelValidator";
 /**
  * fieldDiscovery.ts
  * Diffs detected PDF fields against the Master Profile to produce
  * matched (profile has a value) and discovered (no profile match) buckets.
+ * v7.6: Also runs type validation and returns MismatchWarning[]
  */
 import { MASTER_PROFILE_LABELS, semanticMap } from "./semanticMapping";
+
+export type { MismatchWarning };
 
 export interface ProfileField {
   key: string;
@@ -31,16 +35,22 @@ export interface MappedField {
 
 /**
  * Compare detected PDF fields against a flat profile map.
- * Returns two buckets:
- *   matched   — fields where the profile has a non-empty value
+ * Returns:
+ *   matched    — fields where the profile has a non-empty value
  *   discovered — fields with no profile key OR empty profile value
+ *   mismatches — fields whose value type conflicts with the expected type
  */
 export function diffFieldsAgainstProfile(
   detectedFields: DetectedField[],
   profile: Record<string, string>,
-): { matched: MappedField[]; discovered: MappedField[] } {
+): {
+  matched: MappedField[];
+  discovered: MappedField[];
+  mismatches: MismatchWarning[];
+} {
   const matched: MappedField[] = [];
   const discovered: MappedField[] = [];
+  const mismatches: MismatchWarning[] = [];
 
   for (const field of detectedFields) {
     const result = semanticMap(field.label);
@@ -66,10 +76,19 @@ export function diffFieldsAgainstProfile(
 
     if (hasValue) {
       matched.push(mapped);
+      // Run type validation for matched fields
+      if (profileKey !== null) {
+        const warning = validateFieldValue(
+          field.label,
+          profileKey,
+          profileValue,
+        );
+        if (warning) mismatches.push(warning);
+      }
     } else {
       discovered.push(mapped);
     }
   }
 
-  return { matched, discovered };
+  return { matched, discovered, mismatches };
 }

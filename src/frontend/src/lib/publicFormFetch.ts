@@ -12,7 +12,7 @@
  * as a Blob, mimicking what the backend proxy would return.
  */
 
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "@/lib/pdf-lib-stub";
 import type { PublicForm } from "./publicFormLibrary";
 
 export interface DetectedField {

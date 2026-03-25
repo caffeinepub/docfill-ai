@@ -1,4 +1,4 @@
-import { PDFDocument, PDFTextField, rgb } from "pdf-lib";
+import { PDFDocument, PDFTextField, rgb } from "@/lib/pdf-lib-stub";
 
 export interface PdfFillEntry {
   fieldName: string;

@@ -1,5 +1,6 @@
 import { DataMappingPanel } from "@/components/DataMappingPanel";
 import { FormLibrary } from "@/components/FormLibrary";
+import { MismatchPromptDialog } from "@/components/MismatchPromptDialog";
 import { MissingInfoDrawer } from "@/components/MissingInfoDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,12 +16,16 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useBilling } from "@/hooks/useBilling";
+import { PDFDocument } from "@/lib/pdf-lib-stub";
 import { cn } from "@/lib/utils";
 import {
   type CoordinateSlot,
   detectCoordinateSlots,
 } from "@/utils/coordinateDetector";
-import { diffFieldsAgainstProfile } from "@/utils/fieldDiscovery";
+import {
+  type MismatchWarning,
+  diffFieldsAgainstProfile,
+} from "@/utils/fieldDiscovery";
 import type { MappedField } from "@/utils/fieldDiscovery";
 import {
   type CoordinateFillEntry,
@@ -56,7 +61,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { PDFDocument } from "pdf-lib";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -306,6 +310,8 @@ export function UploadPage({ templateId }: UploadPageProps) {
   >({});
   const [saveChecked, setSaveChecked] = useState<Record<string, boolean>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [mismatches, setMismatches] = useState<MismatchWarning[]>([]);
+  const [mismatchDialogOpen, setMismatchDialogOpen] = useState(false);
 
   // Coordinate mode state
   const [coordSlots, setCoordSlots] = useState<CoordinateSlot[]>([]);
@@ -480,12 +486,14 @@ export function UploadPage({ templateId }: UploadPageProps) {
 
       // Compute split-screen buckets
       const rawDetected = realFieldNames.map((l) => ({ label: l }));
-      const { matched, discovered } = diffFieldsAgainstProfile(
-        rawDetected,
-        profile,
-      );
+      const {
+        matched,
+        discovered,
+        mismatches: newMismatches,
+      } = diffFieldsAgainstProfile(rawDetected, profile);
       setMappedMatched(matched);
       setMappedDiscovered(discovered);
+      setMismatches(newMismatches);
 
       setStage("detected");
 
@@ -557,6 +565,12 @@ export function UploadPage({ templateId }: UploadPageProps) {
       }
     }
 
+    // If there are type-mismatch warnings, open the resolution dialog first
+    if (mismatches.length > 0) {
+      setMismatchDialogOpen(true);
+      return;
+    }
+
     setStage("filling");
 
     try {
@@ -613,7 +627,83 @@ export function UploadPage({ templateId }: UploadPageProps) {
     isProUser,
     paygVerified,
     hasQuotaRemaining,
+    mismatches,
   ]);
+
+  const handleMismatchResolve = useCallback(
+    async (
+      resolutions: Record<
+        string,
+        { action: "keep" | "blank" | "edit"; value?: string }
+      >,
+    ) => {
+      setMismatchDialogOpen(false);
+      if (!file) return;
+
+      // Apply resolutions: build an overrides patch
+      const patchedOverrides = { ...overrides };
+      for (const w of mismatches) {
+        const res = resolutions[w.fieldLabel];
+        if (!res) continue;
+        if (res.action === "blank") {
+          patchedOverrides[w.profileKey] = "";
+        } else if (res.action === "edit" && res.value !== undefined) {
+          patchedOverrides[w.profileKey] = res.value;
+        }
+        // "keep" → no change
+      }
+
+      // Clear mismatches so fill proceeds without re-triggering dialog
+      setMismatches([]);
+
+      // Inline fill logic (billing already checked before dialog opened)
+      setStage("filling");
+      try {
+        if (fillMode === "coordinate") {
+          const entriesToFill: CoordinateFillEntry[] = coordSlots
+            .map((slot) => ({
+              text:
+                patchedOverrides[slot.profileKey] !== undefined
+                  ? patchedOverrides[slot.profileKey]
+                  : slot.suggestedText,
+              x: slot.x,
+              y: slot.y,
+              page: slot.page,
+              fontSize: slot.fontSize,
+            }))
+            .filter((e) => e.text.trim().length > 0);
+          const outputFilename = file.name.replace(/\.pdf$/i, "_filled.pdf");
+          await fillAndDownloadPdfByCoordinates(
+            file,
+            entriesToFill,
+            outputFilename,
+          );
+          setStage("complete");
+          toast.success("Document filled and downloaded!");
+          return;
+        }
+        const profile = getProfileData();
+        const fillData = buildFillMapping(
+          pdfFieldNames,
+          patchedOverrides,
+          profile,
+        );
+        const outputFilename = file.name.replace(/\.pdf$/i, "_filled.pdf");
+        const result = await fillAndDownloadPdf(file, fillData, outputFilename);
+        if (result === null) {
+          toast.error("No fillable fields detected in this PDF.");
+          setStage("no_fields");
+          return;
+        }
+        setStage("complete");
+        toast.success("Document filled and downloaded!");
+      } catch {
+        toast.error("Failed to fill document. Please try again.");
+        setStage(fillMode === "coordinate" ? "coord_detected" : "review");
+      }
+    },
+    [file, pdfFieldNames, overrides, fillMode, coordSlots, mismatches],
+  );
 
   const handleReset = useCallback(() => {
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -635,6 +725,8 @@ export function UploadPage({ templateId }: UploadPageProps) {
     setDiscoveredValues({});
     setSaveChecked({});
     setDrawerOpen(false);
+    setMismatches([]);
+    setMismatchDialogOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [pdfObjectUrl]);
 
@@ -1381,6 +1473,7 @@ export function UploadPage({ templateId }: UploadPageProps) {
                 <DataMappingPanel
                   matched={mappedMatched}
                   discovered={mappedDiscovered}
+                  mismatches={mismatches}
                   overrides={overrides}
                   onOverrideChange={(key, val) =>
                     setOverrides((prev) => ({ ...prev, [key]: val }))
@@ -1399,6 +1492,14 @@ export function UploadPage({ templateId }: UploadPageProps) {
                 />
               </motion.div>
             </div>
+
+            {/* Mismatch Prompt Dialog */}
+            <MismatchPromptDialog
+              open={mismatchDialogOpen}
+              mismatches={mismatches}
+              onResolve={handleMismatchResolve}
+              onCancel={() => setMismatchDialogOpen(false)}
+            />
 
             {/* Missing Info Drawer */}
             <MissingInfoDrawer

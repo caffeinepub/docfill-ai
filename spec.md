@@ -1,57 +1,36 @@
 # DocFill AI
 
 ## Current State
-
-DocFill AI is a full-stack document automation platform with:
-- React frontend with Glassmorphism/Bento UI (Slate Blue/White, Inter font)
-- Motoko backend with authorization, blob-storage, and user profile management
-- Sidebar navigation: Dashboard, Templates, Profile, Upload, Documents
-- Semantic field mapping engine, coordinate-based PDF filling, dynamic field discovery
-- Multi-category template library (US, Jamaica, Haiti)
-- Public Form Library with .gov/.edu source fetching
-- Missing Info Drawer, split-screen mapping view, exact label mapping
-- No billing, subscription, or pay-as-you-go logic yet
+The semantic mapping engine (`semanticMapping.ts`) maps PDF field labels to Master Profile keys via 3-pass alias matching. The `pdfFill.ts` fills AcroForm fields and coordinate overlays. The `fieldDiscovery.ts` diffs detected fields against the profile. The `DataMappingPanel.tsx` displays matched/discovered fields with inline edit inputs. No data-type validation exists — any profile value can be placed into any field regardless of the field label's semantic type.
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Marketplace Metadata file** (`marketplace.json`) with:
-  - 16:9 preview image reference
-  - Tagline: "The Intelligent Document Blueprint"
-  - Key features: AI Field Extraction, Master Profile JSON, Public Form Library
-  - Clone fee: $50
-  - Sovereign Management metadata block (creator canister ID, optional update channel, update scope: security/engine only, cloner data isolation flag)
-- **16:9 preview image** (`/assets/generated/marketplace-preview.dim_1280x720.png`)
-- **Billing page** (`BillingPage.tsx`) as a new sidebar tab
-  - Current plan display (Basic / Pro badge)
-  - Payment method management (via Stripe)
-  - Transaction history list
-- **Stripe subscription tiers**:
-  - Basic (Free): 2 document fills/month quota enforced in frontend state
-  - Pro ($14.99/mo): unlimited fills, 5GB storage access, Sourced Public Forms unlocked
-- **Pay-As-You-Go flow**: "Unlock & Download" button for $1.99 per filled PDF for non-Pro users
-- **Download gating**: Download button activates only after Stripe payment success OR active Pro subscription verified
-- **useBilling hook**: manages subscription status, fill quota, PAYG state, and Stripe checkout triggers
-- **Subscription context**: provides plan tier to Upload, Documents, and Template Search pages
+- `labelValidator.ts` utility: validates that a given profile value is compatible with the target field label/type. Defines rules:
+  - `name` fields: must be alphabetic only (no digits or phone patterns)
+  - `idNumber`/SSN fields: must match `XXX-XX-XXXX` or 9-digit number pattern
+  - `street` fields: value must look like a street address (not a phone number or date)
+  - `dob` fields: must match a date pattern
+  - `phone` fields: must match a phone pattern
+- Mismatch detection logic: when a profile value fails the type rule for the mapped field, generate a `MismatchWarning` object `{ fieldLabel, mappedProfileKey, detectedType, assignedValue, suggestedFix }`
+- `MismatchPromptDialog.tsx`: a modal dialog shown when one or more mismatches are detected before fill. Shows each conflict clearly and lets the user:
+  - "Keep Anyway" (proceed with the mismatched value)
+  - "Leave Blank" (discard the value for this field)
+  - "Edit" (user types a corrected value inline)
+- Null handling: if a profile value has no corresponding field label on the form, it is silently discarded (already mostly working, but make it explicit and logged to console in dev)
+- No Drift guarantee: validated by processing fields independently; a missing/discarded value does not shift adjacent fields
 
 ### Modify
-- `AppLayout.tsx`: add "Billing" nav item with CreditCard icon
-- `App.tsx`: add `billing` page type and render `BillingPage`
-- `UploadPage.tsx`: gate the Download button behind billing check; show "Unlock & Download ($1.99)" for Basic users who have used quota
-- `DashboardPage.tsx`: show plan badge and fill quota usage widget in the stats row
+- `fieldDiscovery.ts`: after mapping, run `validateFieldValue()` on each matched field. Return `MismatchWarning[]` alongside matched/discovered buckets.
+- `DataMappingPanel.tsx`: display a warning icon on any field that has a pending mismatch conflict.
+- `UploadPage.tsx`: before calling `fillAndDownloadPdf`, check for mismatches. If any exist, open `MismatchPromptDialog` and await resolution before proceeding with fill.
 
 ### Remove
-- Nothing removed
+- Nothing removed.
 
 ## Implementation Plan
-
-1. Generate 16:9 marketplace preview image
-2. Write `marketplace.json` metadata file
-3. Select `stripe` Caffeine component
-4. Regenerate backend with Stripe subscription support, fill quota tracking per user, PAYG purchase recording
-5. Add `BillingPage.tsx` with plan cards, payment method management, and transaction history
-6. Add `useBilling.ts` hook encapsulating plan status, quota usage, and Stripe checkout calls
-7. Update `AppLayout.tsx` to add Billing nav item
-8. Update `App.tsx` to handle `billing` page
-9. Gate download in `UploadPage.tsx` — show PAYG button or block behind Pro check
-10. Add plan badge + quota widget to `DashboardPage.tsx`
+1. Create `src/frontend/src/utils/labelValidator.ts` with type rules and `validateFieldValue()` function.
+2. Update `fieldDiscovery.ts` to run validation and return `MismatchWarning[]`.
+3. Create `src/frontend/src/components/MismatchPromptDialog.tsx` modal.
+4. Update `DataMappingPanel.tsx` to show warning icons on conflicted fields.
+5. Update `UploadPage.tsx` to intercept the fill action, check for mismatches, show dialog, and resolve before downloading.

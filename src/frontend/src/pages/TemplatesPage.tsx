@@ -9,8 +9,9 @@ import {
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import JSZip from "@/lib/jszip-stub";
+import { PDFDocument, StandardFonts, rgb } from "@/lib/pdf-lib-stub";
 import { cn } from "@/lib/utils";
-import JSZip from "jszip";
 import {
   AlertTriangle,
   BookOpen,
@@ -25,7 +26,6 @@ import {
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { useState } from "react";
 import { toast } from "sonner";
 
