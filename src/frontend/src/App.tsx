@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
+import { BillingPage } from "@/pages/BillingPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { LoginPage } from "@/pages/LoginPage";
@@ -11,7 +12,13 @@ import { Loader2, Zap } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 
-type Page = "dashboard" | "profile" | "upload" | "documents" | "templates";
+export type Page =
+  | "dashboard"
+  | "profile"
+  | "upload"
+  | "documents"
+  | "templates"
+  | "billing";
 
 function LoadingScreen() {
   return (
@@ -67,11 +74,18 @@ export default function App() {
       case "profile":
         return <ProfilePage />;
       case "upload":
-        return <UploadPage templateId={activeTemplateId} />;
+        return (
+          <UploadPage
+            templateId={activeTemplateId}
+            onNavigate={handleNavigate}
+          />
+        );
       case "documents":
         return <DocumentsPage onNavigate={handleNavigate} />;
       case "templates":
         return <TemplatesPage onNavigate={handleNavigate} />;
+      case "billing":
+        return <BillingPage />;
       default:
         return <DashboardPage onNavigate={handleNavigate} />;
     }

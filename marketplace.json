@@ -1,0 +1,40 @@
+{
+  "name": "DocFill AI",
+  "tagline": "The Intelligent Document Blueprint",
+  "description": "An advanced document automation platform that uses AI to extract fields from any PDF, maps them to your Master Profile JSON, and fills forms instantly. Supports US immigration forms, Caribbean government documents, and any public domain form from .gov/.edu sources.",
+  "previewImage": "/assets/generated/marketplace-preview.dim_1280x720.png",
+  "previewImageAspectRatio": "16:9",
+  "cloneFee": {
+    "amountUSD": 50,
+    "currency": "USD"
+  },
+  "keyFeatures": [
+    {
+      "id": "ai-field-extraction",
+      "title": "AI Field Extraction",
+      "description": "Semantic mapping engine with 200+ alias variants automatically identifies and maps PDF fields to your profile data across AcroForm and flat/scanned documents."
+    },
+    {
+      "id": "master-profile-json",
+      "title": "Master Profile JSON",
+      "description": "A structured JSON profile stores your personal, contact, employment, and address data once — then auto-fills any form instantly, with privacy mode to keep data in-memory only."
+    },
+    {
+      "id": "public-form-library",
+      "title": "Public Form Library",
+      "description": "Integrated library of official .gov and .edu forms (IRS W-9, W-4, I-9, N-400, and more) with Source Verified badges and one-click import directly into the fill pipeline."
+    }
+  ],
+  "sovereignManagement": {
+    "enabled": true,
+    "updateChannel": "optional",
+    "updateScope": ["security", "engine"],
+    "cloneDataIsolation": true,
+    "cloneBrandingControl": true,
+    "description": "The original creator may push optional security patches and AI engine updates to all clones. Cloners retain full ownership of their user data, branding, and configuration. No mandatory updates. Cloner principal data is never accessible to the original creator."
+  },
+  "category": "Productivity",
+  "tags": ["documents", "pdf", "ai", "forms", "automation", "legal", "immigration"],
+  "version": "10.0",
+  "builtWith": "caffeine.ai"
+}

@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { useBilling } from "@/hooks/useBilling";
 import { useDocumentStore } from "@/hooks/useDocumentStore";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import { useGetCallerUserProfile } from "@/hooks/useQueries";
@@ -31,11 +32,18 @@ import {
   User,
   Zap,
 } from "lucide-react";
+import { CreditCard, Crown } from "lucide-react";
 import { type Variants, motion } from "motion/react";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-type Page = "dashboard" | "profile" | "upload" | "documents";
+type Page =
+  | "dashboard"
+  | "profile"
+  | "upload"
+  | "documents"
+  | "templates"
+  | "billing";
 
 interface DashboardPageProps {
   onNavigate: (page: Page) => void;
@@ -116,6 +124,8 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   const displayName =
     profile?.name || identity?.getPrincipal().toString().slice(0, 8) || "User";
   const firstName = displayName.split(" ")[0];
+
+  const { fillCount, isProUser } = useBilling();
 
   // Public Library state
   const [publicLibraryMode, setPublicLibraryMode] = useState(false);
@@ -340,6 +350,65 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
                 className="gap-1.5 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground border-0 shadow-none"
               >
                 Upload PDF <ArrowRight size={14} />
+              </Button>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Billing card */}
+        <motion.div variants={itemVariant}>
+          <Card
+            className="bento-card h-full cursor-pointer card-hover group border-amber-500/20"
+            onClick={() => onNavigate("billing")}
+            data-ocid="dashboard.billing_card"
+          >
+            <CardContent className="flex flex-col h-full py-6 px-5">
+              <div className="flex items-center justify-between mb-4">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center">
+                  <CreditCard
+                    size={18}
+                    className="text-amber-600 dark:text-amber-400"
+                  />
+                </div>
+                {isProUser ? (
+                  <Badge className="bg-amber-500 hover:bg-amber-500 text-white gap-1 text-xs">
+                    <Crown size={10} />
+                    Pro
+                  </Badge>
+                ) : (
+                  <Badge variant="secondary" className="text-xs">
+                    Basic
+                  </Badge>
+                )}
+              </div>
+              <h3 className="font-display font-semibold text-foreground mb-1 text-sm">
+                Subscription
+              </h3>
+              {isProUser ? (
+                <p className="text-xs text-muted-foreground mb-3">
+                  Unlimited fills active
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    {fillCount}/2 free fills used
+                  </p>
+                  <Progress
+                    value={Math.min(100, (fillCount / 2) * 100)}
+                    className={
+                      fillCount >= 2
+                        ? "[&>div]:bg-destructive"
+                        : "[&>div]:bg-amber-500"
+                    }
+                  />
+                </>
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="mt-auto gap-1.5 text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 text-xs justify-start px-0"
+              >
+                Manage Billing →
               </Button>
             </CardContent>
           </Card>

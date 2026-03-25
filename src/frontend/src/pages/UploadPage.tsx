@@ -1,4 +1,5 @@
 import { DataMappingPanel } from "@/components/DataMappingPanel";
+import { FormLibrary } from "@/components/FormLibrary";
 import { MissingInfoDrawer } from "@/components/MissingInfoDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useBilling } from "@/hooks/useBilling";
 import { cn } from "@/lib/utils";
 import {
   type CoordinateSlot,
@@ -38,6 +40,7 @@ import {
   Camera,
   CheckCircle2,
   CloudUpload,
+  CreditCard,
   Download,
   ExternalLink,
   FileCheck,
@@ -46,6 +49,7 @@ import {
   Loader2,
   MapPin,
   RotateCcw,
+  Search,
   Shield,
   Sparkles,
   Upload,
@@ -273,9 +277,18 @@ type ReviewLang = "en" | "fr" | "ht";
 
 interface UploadPageProps {
   templateId?: string | null;
+  onNavigate?: (page: import("@/App").Page) => void;
 }
 
 export function UploadPage({ templateId }: UploadPageProps) {
+  const {
+    isProUser,
+    hasQuotaRemaining,
+    fillCount,
+    isStartingCheckout,
+    startPaygCheckout,
+    paygVerified,
+  } = useBilling();
   const [stage, setStage] = useState<Stage>("idle");
   const [isDragging, setIsDragging] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -313,6 +326,8 @@ export function UploadPage({ templateId }: UploadPageProps) {
 
   // Language toggle for Haitian forms
   const [reviewLang, setReviewLang] = useState<ReviewLang>("en");
+  const [formSearchQuery, setFormSearchQuery] = useState("");
+  const [loadingFormId, setLoadingFormId] = useState<string | null>(null);
 
   const isHaitianForm = templateId === "ds2029" || templateId === "i821";
 
@@ -515,8 +530,33 @@ export function UploadPage({ templateId }: UploadPageProps) {
     [triggerExtraction],
   );
 
+  const handleFormLibrarySelect = async (
+    file: File,
+    meta: { formName: string; domain: string },
+  ) => {
+    const formId = file.name.replace(".pdf", "");
+    setLoadingFormId(formId);
+    try {
+      setPublicFormMeta({ ...meta, isVerified: true });
+      triggerExtraction(file);
+    } finally {
+      setLoadingFormId(null);
+    }
+  };
+
   const handleAutoFill = useCallback(async () => {
     if (!file) return;
+
+    // Billing gate for basic users
+    if (!isProUser && !paygVerified) {
+      if (!hasQuotaRemaining) {
+        toast.error(
+          "You've used all 2 free fills this month. Upgrade to Pro or buy a single fill.",
+        );
+        return;
+      }
+    }
+
     setStage("filling");
 
     try {
@@ -563,7 +603,17 @@ export function UploadPage({ templateId }: UploadPageProps) {
       toast.error("Failed to fill document. Please try again.");
       setStage(fillMode === "coordinate" ? "coord_detected" : "review");
     }
-  }, [file, pdfFieldNames, overrides, fillMode, coordSlots, coordOverrides]);
+  }, [
+    file,
+    pdfFieldNames,
+    overrides,
+    fillMode,
+    coordSlots,
+    coordOverrides,
+    isProUser,
+    paygVerified,
+    hasQuotaRemaining,
+  ]);
 
   const handleReset = useCallback(() => {
     if (progressIntervalRef.current) clearInterval(progressIntervalRef.current);
@@ -767,6 +817,27 @@ export function UploadPage({ templateId }: UploadPageProps) {
             exit={{ opacity: 0, y: -12 }}
             transition={{ duration: 0.3 }}
           >
+            {/* Form Search Bar */}
+            <div className="relative mb-3">
+              <Search
+                size={15}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none"
+              />
+              <input
+                data-ocid="upload.search_input"
+                type="text"
+                value={formSearchQuery}
+                onChange={(e) => setFormSearchQuery(e.target.value)}
+                placeholder="Search for official forms (e.g. W9, Lease)..."
+                className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-border bg-card text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/40 transition-all"
+              />
+            </div>
+            {/* Form Library */}
+            <FormLibrary
+              searchQuery={formSearchQuery}
+              onSelect={handleFormLibrarySelect}
+              isLoading={loadingFormId}
+            />
             {/* Photo Guide */}
             {templateId && PHOTO_SPECS[templateId] && (
               <div
@@ -1546,29 +1617,68 @@ export function UploadPage({ templateId }: UploadPageProps) {
                   </div>
                 )}
 
-                <div className="flex gap-3 flex-wrap">
-                  <Button
-                    data-ocid="upload.generate.button"
-                    onClick={handleAutoFill}
-                    disabled={
-                      stage === "filling" ||
-                      (fillMode === "acroform" && matchedFields.length === 0) ||
-                      (fillMode === "coordinate" && filledCoordCount === 0)
-                    }
-                    className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary-glow"
-                  >
-                    {stage === "filling" ? (
-                      <>
-                        <Loader2 size={15} className="animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Download size={15} />
-                        Generate &amp; Download
-                      </>
+                {/* Quota indicator for basic users */}
+                {!isProUser && (
+                  <div className="mb-3 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span
+                      className={
+                        fillCount >= 2 ? "text-destructive font-medium" : ""
+                      }
+                    >
+                      {fillCount}/2 free fills used this month
+                    </span>
+                    {fillCount >= 2 && !paygVerified && (
+                      <span className="text-destructive">· Quota reached</span>
                     )}
-                  </Button>
+                  </div>
+                )}
+
+                <div className="flex gap-3 flex-wrap">
+                  {/* Show PAYG unlock button if quota exceeded and no payg credit */}
+                  {!isProUser && fillCount >= 2 && !paygVerified ? (
+                    <Button
+                      data-ocid="upload.payg_button"
+                      onClick={startPaygCheckout}
+                      disabled={isStartingCheckout}
+                      className="gap-2 bg-amber-500 hover:bg-amber-600 text-white border-0"
+                    >
+                      {isStartingCheckout ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          Redirecting...
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={15} />
+                          Unlock &amp; Download ($1.99)
+                        </>
+                      )}
+                    </Button>
+                  ) : (
+                    <Button
+                      data-ocid="upload.generate.button"
+                      onClick={handleAutoFill}
+                      disabled={
+                        stage === "filling" ||
+                        (fillMode === "acroform" &&
+                          matchedFields.length === 0) ||
+                        (fillMode === "coordinate" && filledCoordCount === 0)
+                      }
+                      className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary-glow"
+                    >
+                      {stage === "filling" ? (
+                        <>
+                          <Loader2 size={15} className="animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Download size={15} />
+                          Generate &amp; Download
+                        </>
+                      )}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={() => setStage("detected")}

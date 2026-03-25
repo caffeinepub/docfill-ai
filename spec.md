@@ -1,41 +1,57 @@
 # DocFill AI
 
 ## Current State
-DocFill AI v7.5 is a full-stack document automation platform with:
-- Bento Box dashboard with profile completeness, document stats, and navigation
-- Template library (US: N-400, N-600, G-1145; Jamaica: N1, R1; Haiti: DS-2029, I-821)
-- PDF upload with semantic field mapping, coordinate-based filling, split-screen mapping view
-- Missing Info Drawer with "Save to Master Profile" support
-- Exact label mapping (PDF field label as primary, semantic subtext)
-- Privacy Mode, batch ZIP generation, language toggle for Haitian forms
-- Sidebar nav: Dashboard, Master Profile, Document History, API Settings, Templates
+
+DocFill AI is a full-stack document automation platform with:
+- React frontend with Glassmorphism/Bento UI (Slate Blue/White, Inter font)
+- Motoko backend with authorization, blob-storage, and user profile management
+- Sidebar navigation: Dashboard, Templates, Profile, Upload, Documents
+- Semantic field mapping engine, coordinate-based PDF filling, dynamic field discovery
+- Multi-category template library (US, Jamaica, Haiti)
+- Public Form Library with .gov/.edu source fetching
+- Missing Info Drawer, split-screen mapping view, exact label mapping
+- No billing, subscription, or pay-as-you-go logic yet
 
 ## Requested Changes (Diff)
 
 ### Add
-- **Public Form Search Bar** on Dashboard/Templates view with placeholder: "Search for a public form (e.g., 'IRS W9' or 'California Rental Agreement')"
-- **Public Library toggle** to switch view between "My Uploads" and "Global Public Forms"
-- **Static library of direct-download URLs** for public domain PDFs from .gov and .edu sources (W-9, W-4, I-9, N-400, SS-5, 1040, CA rental agreement, etc.)
-- **Search logic** that queries the local URL library and returns matches
-- **"Use Official Version" button** on matched results that fetches the PDF via HTTP outcalls (or simulated fetch) and loads it directly into the app's workspace
-- **"Source Verified" badge** on documents sourced from official .gov / .edu domains
-- **"Trending Forms" section** below the search bar showing top 5 most downloaded public templates (with download count display)
-- **"Download & Fill" CTA** prominently shown once a template is selected
-- After fetching a public form, automatically run the Recognition Protocol (field scanning) on it
-- **`publicFormLibrary.ts`** -- a curated static map of form name → direct URL + metadata (source domain, category, field count estimate)
+- **Marketplace Metadata file** (`marketplace.json`) with:
+  - 16:9 preview image reference
+  - Tagline: "The Intelligent Document Blueprint"
+  - Key features: AI Field Extraction, Master Profile JSON, Public Form Library
+  - Clone fee: $50
+  - Sovereign Management metadata block (creator canister ID, optional update channel, update scope: security/engine only, cloner data isolation flag)
+- **16:9 preview image** (`/assets/generated/marketplace-preview.dim_1280x720.png`)
+- **Billing page** (`BillingPage.tsx`) as a new sidebar tab
+  - Current plan display (Basic / Pro badge)
+  - Payment method management (via Stripe)
+  - Transaction history list
+- **Stripe subscription tiers**:
+  - Basic (Free): 2 document fills/month quota enforced in frontend state
+  - Pro ($14.99/mo): unlimited fills, 5GB storage access, Sourced Public Forms unlocked
+- **Pay-As-You-Go flow**: "Unlock & Download" button for $1.99 per filled PDF for non-Pro users
+- **Download gating**: Download button activates only after Stripe payment success OR active Pro subscription verified
+- **useBilling hook**: manages subscription status, fill quota, PAYG state, and Stripe checkout triggers
+- **Subscription context**: provides plan tier to Upload, Documents, and Template Search pages
 
 ### Modify
-- **DashboardPage** -- add the search bar, Public Library toggle, and Trending Forms section
-- **TemplatesPage** -- integrate search and Public Library toggle, show "Source Verified" badge on fetched forms
-- **UploadPage** -- accept a pre-fetched PDF blob (from public library fetch) so the Recognition Protocol runs automatically without manual upload
+- `AppLayout.tsx`: add "Billing" nav item with CreditCard icon
+- `App.tsx`: add `billing` page type and render `BillingPage`
+- `UploadPage.tsx`: gate the Download button behind billing check; show "Unlock & Download ($1.99)" for Basic users who have used quota
+- `DashboardPage.tsx`: show plan badge and fill quota usage widget in the stats row
 
 ### Remove
 - Nothing removed
 
 ## Implementation Plan
-1. Create `src/frontend/src/lib/publicFormLibrary.ts` -- static array of public forms with: id, name, category, sourceUrl, domain, downloadCount, tags[]
-2. Create `src/frontend/src/lib/publicFormFetch.ts` -- async function that fetches a PDF from a given URL and returns an ArrayBuffer (uses fetch(); since this is client-side, CORS may block some .gov URLs -- use a simulated/mock fetch that returns a placeholder ArrayBuffer for demo purposes, with a note that a backend proxy would be used in production)
-3. Update `DashboardPage.tsx` -- add search bar with Public Library toggle, Trending Forms section (top 5 by downloadCount), search result list with "Use Official Version" button and "Source Verified" badge
-4. Update `TemplatesPage.tsx` -- integrate Public Library toggle and search; show verified badge on gov-sourced templates
-5. Update `UploadPage.tsx` -- accept an optional pre-loaded PDF (passed via navigation state or context) and auto-trigger Recognition Protocol
-6. Wire "Download & Fill" as a prominent CTA once a form is selected from public library
+
+1. Generate 16:9 marketplace preview image
+2. Write `marketplace.json` metadata file
+3. Select `stripe` Caffeine component
+4. Regenerate backend with Stripe subscription support, fill quota tracking per user, PAYG purchase recording
+5. Add `BillingPage.tsx` with plan cards, payment method management, and transaction history
+6. Add `useBilling.ts` hook encapsulating plan status, quota usage, and Stripe checkout calls
+7. Update `AppLayout.tsx` to add Billing nav item
+8. Update `App.tsx` to handle `billing` page
+9. Gate download in `UploadPage.tsx` — show PAYG button or block behind Pro check
+10. Add plan badge + quota widget to `DashboardPage.tsx`

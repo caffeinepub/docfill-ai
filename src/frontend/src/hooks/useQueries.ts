@@ -89,7 +89,12 @@ export function useUploadCallerProfileFile() {
     }) => {
       if (!actor) throw new Error("Actor not available");
       const blob = ExternalBlob.fromBytes(bytes);
-      return actor.updateCallerProfileFileReference(fileName, blob);
+      const fileReference: FileReference = {
+        id: `profile-${Date.now()}`,
+        blob,
+        name: fileName,
+      };
+      return actor.saveFileReference(fileReference);
     },
   });
 }

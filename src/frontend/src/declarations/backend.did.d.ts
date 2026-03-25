@@ -16,6 +16,38 @@ export interface FileReference {
   'blob' : ExternalBlob,
   'name' : string,
 }
+export interface ShoppingItem {
+  'productName' : string,
+  'currency' : string,
+  'quantity' : bigint,
+  'priceInCents' : bigint,
+  'productDescription' : string,
+}
+export interface StripeConfiguration {
+  'allowedCountries' : Array<string>,
+  'secretKey' : string,
+}
+export type StripeSessionStatus = {
+    'completed' : { 'userPrincipal' : [] | [string], 'response' : string }
+  } |
+  { 'failed' : { 'error' : string } };
+export type SubscriptionTier = { 'pro' : null } |
+  { 'basic' : null };
+export interface TransformationInput {
+  'context' : Uint8Array,
+  'response' : http_request_result,
+}
+export interface TransformationOutput {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
+}
+export interface UserBillingInfo {
+  'paygPurchases' : bigint,
+  'lastResetTimestampNanos' : bigint,
+  'fillCount' : bigint,
+  'tier' : SubscriptionTier,
+}
 export interface UserProfile {
   'id' : string,
   'name' : string,
@@ -35,6 +67,12 @@ export interface _CaffeineStorageRefillResult {
   'success' : [] | [boolean],
   'topped_up_amount' : [] | [bigint],
 }
+export interface http_header { 'value' : string, 'name' : string }
+export interface http_request_result {
+  'status' : bigint,
+  'body' : Uint8Array,
+  'headers' : Array<http_header>,
+}
 export interface _SERVICE {
   '_caffeineStorageBlobIsLive' : ActorMethod<[Uint8Array], boolean>,
   '_caffeineStorageBlobsToDelete' : ActorMethod<[], Array<Uint8Array>>,
@@ -53,19 +91,32 @@ export interface _SERVICE {
   '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'createCheckoutSession' : ActorMethod<
+    [Array<ShoppingItem>, string, string],
+    string
+  >,
   'deleteFileReference' : ActorMethod<[string], undefined>,
+  'getCallerFillUsage' : ActorMethod<[], UserBillingInfo>,
+  'getCallerSubscription' : ActorMethod<[], UserBillingInfo>,
   'getCallerUserProfile' : ActorMethod<[], UserProfile>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getFileReference' : ActorMethod<[string], FileReference>,
+  'getStripeSessionStatus' : ActorMethod<[string], StripeSessionStatus>,
   'getUserProfile' : ActorMethod<[Principal], UserProfile>,
-  'getUserProfileFileReference' : ActorMethod<[Principal], FileReference>,
+  'handleStripeWebhook' : ActorMethod<[string, string, string], undefined>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
+  'isStripeConfigured' : ActorMethod<[], boolean>,
+  'recordDocumentFill' : ActorMethod<
+    [],
+    { 'ok' : null } |
+      { 'quota_exceeded' : null }
+  >,
+  'recordPaygPurchase' : ActorMethod<[bigint], undefined>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'saveFileReference' : ActorMethod<[FileReference], undefined>,
-  'updateCallerProfileFileReference' : ActorMethod<
-    [string, ExternalBlob],
-    undefined
-  >,
+  'setStripeConfiguration' : ActorMethod<[StripeConfiguration], undefined>,
+  'transform' : ActorMethod<[TransformationInput], TransformationOutput>,
+  'updateSubscriptionTier' : ActorMethod<[SubscriptionTier], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

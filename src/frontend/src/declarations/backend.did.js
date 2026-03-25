@@ -24,6 +24,23 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const ShoppingItem = IDL.Record({
+  'productName' : IDL.Text,
+  'currency' : IDL.Text,
+  'quantity' : IDL.Nat,
+  'priceInCents' : IDL.Nat,
+  'productDescription' : IDL.Text,
+});
+export const SubscriptionTier = IDL.Variant({
+  'pro' : IDL.Null,
+  'basic' : IDL.Null,
+});
+export const UserBillingInfo = IDL.Record({
+  'paygPurchases' : IDL.Nat,
+  'lastResetTimestampNanos' : IDL.Int,
+  'fillCount' : IDL.Nat,
+  'tier' : SubscriptionTier,
+});
 export const UserProfile = IDL.Record({
   'id' : IDL.Text,
   'name' : IDL.Text,
@@ -34,6 +51,35 @@ export const FileReference = IDL.Record({
   'id' : IDL.Text,
   'blob' : ExternalBlob,
   'name' : IDL.Text,
+});
+export const StripeSessionStatus = IDL.Variant({
+  'completed' : IDL.Record({
+    'userPrincipal' : IDL.Opt(IDL.Text),
+    'response' : IDL.Text,
+  }),
+  'failed' : IDL.Record({ 'error' : IDL.Text }),
+});
+export const StripeConfiguration = IDL.Record({
+  'allowedCountries' : IDL.Vec(IDL.Text),
+  'secretKey' : IDL.Text,
+});
+export const http_header = IDL.Record({
+  'value' : IDL.Text,
+  'name' : IDL.Text,
+});
+export const http_request_result = IDL.Record({
+  'status' : IDL.Nat,
+  'body' : IDL.Vec(IDL.Nat8),
+  'headers' : IDL.Vec(http_header),
+});
+export const TransformationInput = IDL.Record({
+  'context' : IDL.Vec(IDL.Nat8),
+  'response' : http_request_result,
+});
+export const TransformationOutput = IDL.Record({
+  'status' : IDL.Nat,
+  'body' : IDL.Vec(IDL.Nat8),
+  'headers' : IDL.Vec(http_header),
 });
 
 export const idlService = IDL.Service({
@@ -65,24 +111,37 @@ export const idlService = IDL.Service({
   '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'createCheckoutSession' : IDL.Func(
+      [IDL.Vec(ShoppingItem), IDL.Text, IDL.Text],
+      [IDL.Text],
+      [],
+    ),
   'deleteFileReference' : IDL.Func([IDL.Text], [], []),
+  'getCallerFillUsage' : IDL.Func([], [UserBillingInfo], ['query']),
+  'getCallerSubscription' : IDL.Func([], [UserBillingInfo], ['query']),
   'getCallerUserProfile' : IDL.Func([], [UserProfile], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getFileReference' : IDL.Func([IDL.Text], [FileReference], ['query']),
+  'getStripeSessionStatus' : IDL.Func([IDL.Text], [StripeSessionStatus], []),
   'getUserProfile' : IDL.Func([IDL.Principal], [UserProfile], ['query']),
-  'getUserProfileFileReference' : IDL.Func(
-      [IDL.Principal],
-      [FileReference],
-      ['query'],
-    ),
+  'handleStripeWebhook' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+  'isStripeConfigured' : IDL.Func([], [IDL.Bool], ['query']),
+  'recordDocumentFill' : IDL.Func(
+      [],
+      [IDL.Variant({ 'ok' : IDL.Null, 'quota_exceeded' : IDL.Null })],
+      [],
+    ),
+  'recordPaygPurchase' : IDL.Func([IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'saveFileReference' : IDL.Func([FileReference], [], []),
-  'updateCallerProfileFileReference' : IDL.Func(
-      [IDL.Text, ExternalBlob],
-      [],
-      [],
+  'setStripeConfiguration' : IDL.Func([StripeConfiguration], [], []),
+  'transform' : IDL.Func(
+      [TransformationInput],
+      [TransformationOutput],
+      ['query'],
     ),
+  'updateSubscriptionTier' : IDL.Func([SubscriptionTier], [], []),
 });
 
 export const idlInitArgs = [];
@@ -104,6 +163,23 @@ export const idlFactory = ({ IDL }) => {
     'user' : IDL.Null,
     'guest' : IDL.Null,
   });
+  const ShoppingItem = IDL.Record({
+    'productName' : IDL.Text,
+    'currency' : IDL.Text,
+    'quantity' : IDL.Nat,
+    'priceInCents' : IDL.Nat,
+    'productDescription' : IDL.Text,
+  });
+  const SubscriptionTier = IDL.Variant({
+    'pro' : IDL.Null,
+    'basic' : IDL.Null,
+  });
+  const UserBillingInfo = IDL.Record({
+    'paygPurchases' : IDL.Nat,
+    'lastResetTimestampNanos' : IDL.Int,
+    'fillCount' : IDL.Nat,
+    'tier' : SubscriptionTier,
+  });
   const UserProfile = IDL.Record({
     'id' : IDL.Text,
     'name' : IDL.Text,
@@ -114,6 +190,32 @@ export const idlFactory = ({ IDL }) => {
     'id' : IDL.Text,
     'blob' : ExternalBlob,
     'name' : IDL.Text,
+  });
+  const StripeSessionStatus = IDL.Variant({
+    'completed' : IDL.Record({
+      'userPrincipal' : IDL.Opt(IDL.Text),
+      'response' : IDL.Text,
+    }),
+    'failed' : IDL.Record({ 'error' : IDL.Text }),
+  });
+  const StripeConfiguration = IDL.Record({
+    'allowedCountries' : IDL.Vec(IDL.Text),
+    'secretKey' : IDL.Text,
+  });
+  const http_header = IDL.Record({ 'value' : IDL.Text, 'name' : IDL.Text });
+  const http_request_result = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(http_header),
+  });
+  const TransformationInput = IDL.Record({
+    'context' : IDL.Vec(IDL.Nat8),
+    'response' : http_request_result,
+  });
+  const TransformationOutput = IDL.Record({
+    'status' : IDL.Nat,
+    'body' : IDL.Vec(IDL.Nat8),
+    'headers' : IDL.Vec(http_header),
   });
   
   return IDL.Service({
@@ -145,24 +247,37 @@ export const idlFactory = ({ IDL }) => {
     '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'createCheckoutSession' : IDL.Func(
+        [IDL.Vec(ShoppingItem), IDL.Text, IDL.Text],
+        [IDL.Text],
+        [],
+      ),
     'deleteFileReference' : IDL.Func([IDL.Text], [], []),
+    'getCallerFillUsage' : IDL.Func([], [UserBillingInfo], ['query']),
+    'getCallerSubscription' : IDL.Func([], [UserBillingInfo], ['query']),
     'getCallerUserProfile' : IDL.Func([], [UserProfile], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getFileReference' : IDL.Func([IDL.Text], [FileReference], ['query']),
+    'getStripeSessionStatus' : IDL.Func([IDL.Text], [StripeSessionStatus], []),
     'getUserProfile' : IDL.Func([IDL.Principal], [UserProfile], ['query']),
-    'getUserProfileFileReference' : IDL.Func(
-        [IDL.Principal],
-        [FileReference],
-        ['query'],
-      ),
+    'handleStripeWebhook' : IDL.Func([IDL.Text, IDL.Text, IDL.Text], [], []),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
+    'isStripeConfigured' : IDL.Func([], [IDL.Bool], ['query']),
+    'recordDocumentFill' : IDL.Func(
+        [],
+        [IDL.Variant({ 'ok' : IDL.Null, 'quota_exceeded' : IDL.Null })],
+        [],
+      ),
+    'recordPaygPurchase' : IDL.Func([IDL.Nat], [], []),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'saveFileReference' : IDL.Func([FileReference], [], []),
-    'updateCallerProfileFileReference' : IDL.Func(
-        [IDL.Text, ExternalBlob],
-        [],
-        [],
+    'setStripeConfiguration' : IDL.Func([StripeConfiguration], [], []),
+    'transform' : IDL.Func(
+        [TransformationInput],
+        [TransformationOutput],
+        ['query'],
       ),
+    'updateSubscriptionTier' : IDL.Func([SubscriptionTier], [], []),
   });
 };
 

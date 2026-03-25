@@ -1,3 +1,4 @@
+import type { Page } from "@/App";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,6 +7,7 @@ import { useGetCallerUserProfile } from "@/hooks/useQueries";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
+  CreditCard,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -16,8 +18,6 @@ import {
   Zap,
 } from "lucide-react";
 import { useState } from "react";
-
-type Page = "dashboard" | "profile" | "upload" | "documents" | "templates";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -31,6 +31,7 @@ const navItems: { id: Page; label: string; icon: React.ElementType }[] = [
   { id: "profile", label: "Profile", icon: User },
   { id: "upload", label: "Upload", icon: Upload },
   { id: "documents", label: "Documents", icon: FileText },
+  { id: "billing", label: "Billing", icon: CreditCard },
 ];
 
 export function AppLayout({
