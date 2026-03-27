@@ -186,7 +186,6 @@ const ALIAS_MAP: Record<string, string[]> = {
     "address",
     "address line 1",
     "address line 2",
-    "physical address",
     "current address",
     "permanent address",
     "primary address",
@@ -272,7 +271,6 @@ const ALIAS_MAP: Record<string, string[]> = {
     "date of birth",
     "birth date",
     "birthday",
-    "date of birth (mm/dd/yyyy)",
     "date of birth (dd/mm/yyyy)",
     "birth date (mm/dd/yyyy)",
     "date born",
@@ -287,6 +285,24 @@ const ALIAS_MAP: Record<string, string[]> = {
     "patient date of birth",
     "applicant date of birth",
     "your date of birth",
+  ],
+
+  todayDate: [
+    "date of signature",
+    "today's date",
+    "todays date",
+    "date signed",
+    "date of notarization",
+    "notarization date",
+    "execution date",
+    "signing date",
+    "date of signing",
+    "signature date",
+    "date (today)",
+    "current date",
+    "date completed",
+    "date prepared",
+    "prepared date",
   ],
 
   idNumber: [
@@ -357,7 +373,6 @@ const ALIAS_MAP: Record<string, string[]> = {
     "workplace",
     "place of employment",
     "current employer",
-    "name of employer",
     "firm",
     "firm name",
     "employer / company",
@@ -464,6 +479,7 @@ export const MASTER_PROFILE_LABELS: Record<string, string> = {
   state: "State",
   zip: "Zip Code",
   dob: "Date of Birth",
+  todayDate: "Today's Date",
   idNumber: "ID / Passport Number",
   employer: "Employer",
   jobTitle: "Job Title",
@@ -568,4 +584,40 @@ export function semanticMap(rawLabel: string): SemanticMapResult {
   }
 
   return { key: null, matchType: "keyword" };
+}
+
+// ---------------------------------------------------------------------------
+// Date label classification (v16)
+// ---------------------------------------------------------------------------
+
+/**
+ * Classify a date field label as DOB, today's date, or ambiguous.
+ * Used by the filling engine to determine which date value to use.
+ */
+export function classifyDateLabel(
+  rawLabel: string,
+): "dob" | "today" | "ambiguous" {
+  const norm = rawLabel.toLowerCase().trim();
+
+  // Check for DOB signals
+  const dobSignals = ["birth", "born", "dob", "d.o.b"];
+  if (dobSignals.some((s) => norm.includes(s))) return "dob";
+
+  // Check for today signals
+  const todaySignals = [
+    "signature",
+    "signed",
+    "notarization",
+    "execution",
+    "signing",
+    "today",
+    "current date",
+    "prepared",
+  ];
+  if (todaySignals.some((s) => norm.includes(s))) return "today";
+
+  // Generic "date" with no context
+  if (norm === "date" || norm === "date:") return "ambiguous";
+
+  return "ambiguous";
 }

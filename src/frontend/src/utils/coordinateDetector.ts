@@ -7,6 +7,22 @@
 
 import { MASTER_PROFILE_LABELS } from "./semanticMapping";
 
+// ---------------------------------------------------------------------------
+// Overlay font & sizing constants (v16)
+// ---------------------------------------------------------------------------
+
+/** Font family used for coordinate-based text overlays */
+export const OVERLAY_FONT = "Helvetica";
+
+/** Font size in points for coordinate-based overlays (range 10–12 pt) */
+export const OVERLAY_FONT_SIZE = 11;
+
+/**
+ * Vertical offset applied to every overlay position.
+ * Negative value = place text N points ABOVE the detected baseline.
+ */
+export const OVERLAY_BASELINE_OFFSET = -2;
+
 export interface CoordinateSlot {
   /** Friendly label, e.g. "Full Name" */
   label: string;
@@ -33,6 +49,7 @@ const ORDERED_KEYS = [
   "email",
   "phone",
   "dob",
+  "todayDate",
   "idNumber",
   "street",
   "city",
@@ -63,7 +80,6 @@ export function detectCoordinateSlots(
   const x = pageWidth * 0.35;
   // Step down 38 points per field
   const stepY = 38;
-  const fontSize = 11;
 
   let index = 0;
   for (const key of ORDERED_KEYS) {
@@ -77,9 +93,10 @@ export function detectCoordinateSlots(
       profileKey: key,
       suggestedText: value,
       x,
-      y: startY - index * stepY,
+      // Apply baseline offset: place text OVERLAY_BASELINE_OFFSET pts above baseline
+      y: startY - index * stepY + OVERLAY_BASELINE_OFFSET,
       page: 0,
-      fontSize,
+      fontSize: OVERLAY_FONT_SIZE,
     });
 
     index++;

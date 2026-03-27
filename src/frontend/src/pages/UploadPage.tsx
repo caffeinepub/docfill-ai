@@ -1,6 +1,6 @@
 import { DataMappingPanel } from "@/components/DataMappingPanel";
 import { FormLibrary } from "@/components/FormLibrary";
-import { MismatchPromptDialog } from "@/components/MismatchPromptDialog";
+import { ManualEntryDialog } from "@/components/ManualEntryDialog";
 import { MissingInfoDrawer } from "@/components/MissingInfoDrawer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -311,7 +311,7 @@ export function UploadPage({ templateId }: UploadPageProps) {
   const [saveChecked, setSaveChecked] = useState<Record<string, boolean>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [mismatches, setMismatches] = useState<MismatchWarning[]>([]);
-  const [mismatchDialogOpen, setMismatchDialogOpen] = useState(false);
+  const [manualEntryDialogOpen, setManualEntryDialogOpen] = useState(false);
 
   // Coordinate mode state
   const [coordSlots, setCoordSlots] = useState<CoordinateSlot[]>([]);
@@ -565,9 +565,9 @@ export function UploadPage({ templateId }: UploadPageProps) {
       }
     }
 
-    // If there are type-mismatch warnings, open the resolution dialog first
-    if (mismatches.length > 0) {
-      setMismatchDialogOpen(true);
+    // If there are unmatched fields or type-mismatch warnings, open the manual entry dialog
+    if (mappedDiscovered.length > 0 || mismatches.length > 0) {
+      setManualEntryDialogOpen(true);
       return;
     }
 
@@ -628,35 +628,40 @@ export function UploadPage({ templateId }: UploadPageProps) {
     paygVerified,
     hasQuotaRemaining,
     mismatches,
+    mappedDiscovered,
   ]);
 
-  const handleMismatchResolve = useCallback(
-    async (
-      resolutions: Record<
-        string,
-        { action: "keep" | "blank" | "edit"; value?: string }
-      >,
-    ) => {
-      setMismatchDialogOpen(false);
+  const handleManualEntryConfirm = useCallback(
+    async (values: Record<string, string>) => {
+      setManualEntryDialogOpen(false);
       if (!file) return;
 
-      // Apply resolutions: build an overrides patch
+      // Build patched overrides from manual entries
       const patchedOverrides = { ...overrides };
-      for (const w of mismatches) {
-        const res = resolutions[w.fieldLabel];
-        if (!res) continue;
-        if (res.action === "blank") {
-          patchedOverrides[w.profileKey] = "";
-        } else if (res.action === "edit" && res.value !== undefined) {
-          patchedOverrides[w.profileKey] = res.value;
+
+      // Apply values from unmatched fields
+      for (const field of mappedDiscovered) {
+        const val = values[field.label];
+        if (val !== undefined) {
+          if (field.profileKey) {
+            patchedOverrides[field.profileKey] = val;
+          }
+          // also store by label for coordinate mode
+          patchedOverrides[field.label] = val;
         }
-        // "keep" → no change
       }
 
-      // Clear mismatches so fill proceeds without re-triggering dialog
+      // Apply values from mismatch fields
+      for (const w of mismatches) {
+        const val = values[w.fieldLabel];
+        if (val !== undefined) {
+          patchedOverrides[w.profileKey] = val;
+        }
+      }
+
+      // Clear mismatches
       setMismatches([]);
 
-      // Inline fill logic (billing already checked before dialog opened)
       setStage("filling");
       try {
         if (fillMode === "coordinate") {
@@ -702,7 +707,15 @@ export function UploadPage({ templateId }: UploadPageProps) {
         setStage(fillMode === "coordinate" ? "coord_detected" : "review");
       }
     },
-    [file, pdfFieldNames, overrides, fillMode, coordSlots, mismatches],
+    [
+      file,
+      pdfFieldNames,
+      overrides,
+      fillMode,
+      coordSlots,
+      mismatches,
+      mappedDiscovered,
+    ],
   );
 
   const handleReset = useCallback(() => {
@@ -726,7 +739,7 @@ export function UploadPage({ templateId }: UploadPageProps) {
     setSaveChecked({});
     setDrawerOpen(false);
     setMismatches([]);
-    setMismatchDialogOpen(false);
+    setManualEntryDialogOpen(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [pdfObjectUrl]);
 
@@ -1493,12 +1506,13 @@ export function UploadPage({ templateId }: UploadPageProps) {
               </motion.div>
             </div>
 
-            {/* Mismatch Prompt Dialog */}
-            <MismatchPromptDialog
-              open={mismatchDialogOpen}
-              mismatches={mismatches}
-              onResolve={handleMismatchResolve}
-              onCancel={() => setMismatchDialogOpen(false)}
+            {/* Manual Entry Dialog */}
+            <ManualEntryDialog
+              open={manualEntryDialogOpen}
+              unmatchedFields={mappedDiscovered}
+              mismatchFields={mismatches}
+              onConfirm={handleManualEntryConfirm}
+              onCancel={() => setManualEntryDialogOpen(false)}
             />
 
             {/* Missing Info Drawer */}

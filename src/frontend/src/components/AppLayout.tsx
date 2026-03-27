@@ -2,22 +2,33 @@ import type { Page } from "@/App";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
 import { useGetCallerUserProfile } from "@/hooks/useQueries";
 import { cn } from "@/lib/utils";
 import {
   BookOpen,
+  CalendarDays,
   CreditCard,
   FileText,
   LayoutDashboard,
   LogOut,
   Menu,
+  NotebookPen,
   Upload,
   User,
   X,
   Zap,
 } from "lucide-react";
-import { useState } from "react";
+import { motion } from "motion/react";
+import { useCallback, useState } from "react";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -25,14 +36,17 @@ interface AppLayoutProps {
   onNavigate: (page: Page) => void;
 }
 
-const navItems: { id: Page; label: string; icon: React.ElementType }[] = [
+const BASE_NAV_ITEMS: { id: Page; label: string; icon: React.ElementType }[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "templates", label: "Templates", icon: BookOpen },
   { id: "profile", label: "Profile", icon: User },
   { id: "upload", label: "Upload", icon: Upload },
   { id: "documents", label: "Documents", icon: FileText },
   { id: "billing", label: "Billing", icon: CreditCard },
+  { id: "appointments", label: "Appointments", icon: CalendarDays },
 ];
+
+const ADMIN_PIN = "2024";
 
 export function AppLayout({
   children,
@@ -43,6 +57,50 @@ export function AppLayout({
   const { data: profile } = useGetCallerUserProfile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Admin mode state — check localStorage on mount
+  const [isAdmin, setIsAdmin] = useState(
+    () => localStorage.getItem("docfill_admin_mode") === "true",
+  );
+
+  // PIN dialog state
+  const [pinDialogOpen, setPinDialogOpen] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const [pinShake, setPinShake] = useState(false);
+
+  const handleAdminLock = useCallback(() => {
+    setIsAdmin(false);
+    if (currentPage === "journal") {
+      onNavigate("dashboard");
+    }
+  }, [currentPage, onNavigate]);
+
+  // Expose handleAdminLock so NotaryJournalPage can call it via a prop
+  // We pass it through context or just let NotaryJournalPage use localStorage + navigate
+  // For now, we wire it in the render below.
+
+  const handlePinSubmit = () => {
+    if (pinInput === ADMIN_PIN) {
+      localStorage.setItem("docfill_admin_mode", "true");
+      setIsAdmin(true);
+      setPinDialogOpen(false);
+      setPinInput("");
+      setPinError(false);
+    } else {
+      setPinError(true);
+      setPinShake(true);
+      setTimeout(() => setPinShake(false), 600);
+      setPinInput("");
+    }
+  };
+
+  const navItems = [
+    ...BASE_NAV_ITEMS,
+    ...(isAdmin
+      ? [{ id: "journal" as Page, label: "Notary Journal", icon: NotebookPen }]
+      : []),
+  ];
+
   const principal = identity?.getPrincipal().toString();
   const displayName =
     profile?.name || (principal ? `${principal.slice(0, 6)}...` : "User");
@@ -50,6 +108,63 @@ export function AppLayout({
 
   return (
     <div className="flex min-h-screen bg-background">
+      {/* Admin PIN Dialog */}
+      <Dialog
+        open={pinDialogOpen}
+        onOpenChange={(o) => {
+          setPinDialogOpen(o);
+          if (!o) {
+            setPinInput("");
+            setPinError(false);
+          }
+        }}
+      >
+        <DialogContent data-ocid="admin.dialog" className="max-w-xs bento-card">
+          <DialogHeader>
+            <DialogTitle className="text-base">Admin Access</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Enter the admin PIN to unlock the Notary Journal.
+            </DialogDescription>
+          </DialogHeader>
+          <motion.div
+            animate={pinShake ? { x: [-8, 8, -6, 6, -4, 4, 0] } : { x: 0 }}
+            transition={{ duration: 0.5 }}
+            className="space-y-3 mt-1"
+          >
+            <Input
+              data-ocid="admin.pin.input"
+              type="password"
+              placeholder="Enter PIN"
+              value={pinInput}
+              onChange={(e) => {
+                setPinInput(e.target.value);
+                setPinError(false);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && handlePinSubmit()}
+              className={cn(
+                "text-center tracking-widest text-lg",
+                pinError && "border-destructive focus-visible:ring-destructive",
+              )}
+              maxLength={8}
+              autoFocus
+            />
+            {pinError && (
+              <p className="text-xs text-destructive text-center">
+                Incorrect PIN. Please try again.
+              </p>
+            )}
+            <Button
+              data-ocid="admin.pin.submit_button"
+              className="w-full"
+              onClick={handlePinSubmit}
+              disabled={pinInput.length === 0}
+            >
+              Unlock
+            </Button>
+          </motion.div>
+        </DialogContent>
+      </Dialog>
+
       {/* Sidebar — desktop */}
       <aside className="hidden md:flex flex-col w-64 bg-sidebar border-r border-sidebar-border sidebar-shadow fixed h-screen z-30">
         {/* Logo */}
@@ -71,7 +186,7 @@ export function AppLayout({
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-1">
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = currentPage === item.id;
@@ -93,7 +208,15 @@ export function AppLayout({
                   size={18}
                 />
                 {item.label}
-                {active && (
+                {item.id === "journal" && (
+                  <Badge
+                    variant="outline"
+                    className="ml-auto text-[9px] px-1.5 py-0 border-amber-500/40 text-amber-600"
+                  >
+                    Admin
+                  </Badge>
+                )}
+                {active && item.id !== "journal" && (
                   <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />
                 )}
               </button>
@@ -126,6 +249,21 @@ export function AppLayout({
             <LogOut size={15} />
             Sign out
           </Button>
+          {/* Subtle admin link */}
+          <button
+            type="button"
+            data-ocid="nav.admin.link"
+            onClick={() => {
+              if (isAdmin) {
+                handleAdminLock();
+              } else {
+                setPinDialogOpen(true);
+              }
+            }}
+            className="w-full text-center text-[10px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors mt-2 py-1"
+          >
+            {isAdmin ? "Lock Admin" : "Admin"}
+          </button>
         </div>
       </aside>
 
@@ -206,6 +344,20 @@ export function AppLayout({
             <LogOut size={15} />
             Sign out
           </Button>
+          <button
+            type="button"
+            onClick={() => {
+              if (isAdmin) {
+                handleAdminLock();
+              } else {
+                setPinDialogOpen(true);
+                setMobileMenuOpen(false);
+              }
+            }}
+            className="w-full text-center text-[10px] text-muted-foreground/40 hover:text-muted-foreground/70 transition-colors py-1"
+          >
+            {isAdmin ? "Lock Admin" : "Admin"}
+          </button>
         </nav>
       </div>
 

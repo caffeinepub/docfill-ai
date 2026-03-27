@@ -11,10 +11,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { type DocRecord, useDocumentStore } from "@/hooks/useDocumentStore";
 import { useDeleteFileReference } from "@/hooks/useQueries";
 import {
+  CalendarDays,
   CheckCircle2,
   Clock,
   Download,
@@ -28,7 +29,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-type Page = "dashboard" | "profile" | "upload" | "documents";
+type Page = "dashboard" | "profile" | "upload" | "documents" | "appointments";
 
 interface DocumentsPageProps {
   onNavigate: (page: Page) => void;
@@ -72,10 +73,12 @@ function DocumentCard({
   doc,
   index,
   onDelete,
+  onBookNotary,
 }: {
   doc: DocRecord;
   index: number;
   onDelete: (id: string) => void;
+  onBookNotary: () => void;
 }) {
   const handleDownload = () => {
     if (doc.downloadUrl) {
@@ -121,7 +124,19 @@ function DocumentCard({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs text-emerald-600 hover:text-emerald-700 hover:bg-emerald-500/10 h-8 px-2.5"
+            onClick={onBookNotary}
+            title="Book a Notary"
+            data-ocid={`documents.secondary_button.${index + 1}`}
+          >
+            <CalendarDays size={13} />
+            <span className="hidden sm:inline">Book Notary</span>
+          </Button>
+
           <Button
             variant="ghost"
             size="icon"
@@ -210,13 +225,24 @@ export function DocumentsPage({ onNavigate }: DocumentsPageProps) {
               stored
             </p>
           </div>
-          <Button
-            onClick={() => onNavigate("upload")}
-            className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary-glow flex-shrink-0"
-          >
-            <Upload size={15} />
-            <span className="hidden sm:inline">Upload PDF</span>
-          </Button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              data-ocid="documents.secondary_button"
+              variant="outline"
+              onClick={() => onNavigate("appointments")}
+              className="gap-2 text-emerald-600 border-emerald-500/30 hover:bg-emerald-500/10 hidden sm:flex"
+            >
+              <CalendarDays size={15} />
+              Book a Notary
+            </Button>
+            <Button
+              onClick={() => onNavigate("upload")}
+              className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-primary-glow"
+            >
+              <Upload size={15} />
+              <span className="hidden sm:inline">Upload PDF</span>
+            </Button>
+          </div>
         </div>
       </motion.div>
 
@@ -291,6 +317,7 @@ export function DocumentsPage({ onNavigate }: DocumentsPageProps) {
                 doc={doc}
                 index={idx}
                 onDelete={handleDelete}
+                onBookNotary={() => onNavigate("appointments")}
               />
             ))
           )}

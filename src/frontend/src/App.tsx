@@ -1,10 +1,12 @@
 import { AppLayout } from "@/components/AppLayout";
 import { Toaster } from "@/components/ui/sonner";
 import { useInternetIdentity } from "@/hooks/useInternetIdentity";
+import { AppointmentsPage } from "@/pages/AppointmentsPage";
 import { BillingPage } from "@/pages/BillingPage";
 import { DashboardPage } from "@/pages/DashboardPage";
 import { DocumentsPage } from "@/pages/DocumentsPage";
 import { LoginPage } from "@/pages/LoginPage";
+import { NotaryJournalPage } from "@/pages/NotaryJournalPage";
 import { ProfilePage } from "@/pages/ProfilePage";
 import { TemplatesPage } from "@/pages/TemplatesPage";
 import { UploadPage } from "@/pages/UploadPage";
@@ -18,7 +20,9 @@ export type Page =
   | "upload"
   | "documents"
   | "templates"
-  | "billing";
+  | "billing"
+  | "appointments"
+  | "journal";
 
 function LoadingScreen() {
   return (
@@ -86,6 +90,12 @@ export default function App() {
         return <TemplatesPage onNavigate={handleNavigate} />;
       case "billing":
         return <BillingPage />;
+      case "appointments":
+        return <AppointmentsPage />;
+      case "journal":
+        return (
+          <NotaryJournalPage onLockAdmin={() => handleNavigate("dashboard")} />
+        );
       default:
         return <DashboardPage onNavigate={handleNavigate} />;
     }

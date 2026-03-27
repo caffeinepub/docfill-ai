@@ -1,4 +1,8 @@
 import { PDFDocument, PDFTextField, rgb } from "@/lib/pdf-lib-stub";
+import {
+  OVERLAY_BASELINE_OFFSET,
+  OVERLAY_FONT_SIZE,
+} from "./coordinateDetector";
 
 export interface PdfFillEntry {
   fieldName: string;
@@ -96,6 +100,7 @@ export interface CoordinateFillEntry {
 
 /**
  * Loads a PDF and overlays text at the specified coordinates using drawText.
+ * Uses Helvetica at OVERLAY_FONT_SIZE with OVERLAY_BASELINE_OFFSET applied.
  * Triggers a browser download of the resulting PDF and returns the filled bytes.
  */
 export async function fillAndDownloadPdfByCoordinates(
@@ -115,11 +120,16 @@ export async function fillAndDownloadPdfByCoordinates(
     const pageIndex = Math.max(0, Math.min(entry.page, pageCount - 1));
     const page = pdfDoc.getPage(pageIndex);
 
+    // Apply baseline offset: shift Y up by OVERLAY_BASELINE_OFFSET (negative = up)
+    const adjustedY = entry.y - OVERLAY_BASELINE_OFFSET;
+    // Use OVERLAY_FONT_SIZE if entry doesn't override
+    const fontSize = entry.fontSize ?? OVERLAY_FONT_SIZE;
+
     try {
       page.drawText(entry.text, {
         x: entry.x,
-        y: entry.y,
-        size: entry.fontSize,
+        y: adjustedY,
+        size: fontSize,
         color: rgb(0.1, 0.1, 0.1),
       });
     } catch {
